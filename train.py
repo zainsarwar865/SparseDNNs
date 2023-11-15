@@ -684,9 +684,6 @@ class AverageMeter(object):
             fmtstr = '{name} {sum:.3f}'
         elif self.summary_type is Summary.COUNT:
             fmtstr = '{name} {count:.3f}'
-        else:
-            raise ValueError('invalid summary type %r' % self.summary_type)
-        
         return fmtstr.format(**self.__dict__)
 
 

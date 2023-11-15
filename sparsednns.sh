@@ -1,7 +1,8 @@
 # Five main components of the Enola Simulator
 CREATE_ROOT=false
 TRAIN_MT_BASELINE=false
-FEATURE_EXTRACTION=false
+FEATURE_EXTRACTION=true
+TEST_MT_BASELINE=false
 
 
 #echo $y
@@ -12,7 +13,7 @@ BashPath="$PWD"/$BashName
 home_dir=/home/zsarwar/Projects/SparseDNNs
 
 # Generic params
-gpu=0
+gpu=1
 seed=42
 
 
@@ -43,7 +44,7 @@ fi
 #############################################################################################
 # Copy bash script to root dir
 cd ${home_dir}
-    python3 copy_bash.py \
+    python3 utils/copy_bash.py \
     --base_dir=$base_dir \
     --root_hash_config=$root_hash_config \
     --bash_script_config=$BashPath
@@ -153,3 +154,39 @@ then
     --trainer_type=$trainer_type
 fi
 #############################################################################################
+
+resume=/bigstor/zsarwar/SparseDNNs/MT_CIFAR10_full_10_d5f3f545a0883adb9c8f98e2a6ba4ac7/MT_Baseline_d2a45a4dd02a5e037e5954b82387e666/Checkpoints/model_best.pth.tar
+
+# TEST 
+if [ "$TEST_MT_BASELINE" = true ]
+then
+    cd ${home_dir}
+    python3 test.py \
+    --gpu=$gpu \
+    --base_dir=$base_dir \
+    --root_hash_config=$root_hash_config \
+    --mt_hash_config=$mt_hash_config \
+    --epochs=$epochs \
+    --num_eval_epochs=$num_eval_epochs \
+    --arch=$model \
+    --batch_size=$batch_size \
+    --lr=$lr \
+    --weight_decay=$weight_decay \
+    --lr_warmup_epochs=$lr_warmup_epochs \
+    --lr_warmup_decay=$lr_warmup_decay \
+    --label_smoothing=$label_smoothing \
+    --mixup_alpha=$mixup_alpha \
+    --cutmix_alpha=$cutmix_alpha \
+    --random_erasing=$random_erasing \
+    --model_ema=False \
+    --resume=$resume \
+    --pretrained=$pretrained \
+    --freeze_layers=$freeze_layers \
+    --seed=$seed \
+    --num_classes=$num_classes \
+    --new_classifier=$new_classifier \
+    --test_per_class=$test_per_class \
+    --original_dataset=$original_dataset \
+    --original_config=$original_config \
+    --trainer_type=$trainer_type
+fi

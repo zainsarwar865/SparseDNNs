@@ -35,8 +35,7 @@ from utils.transforms import get_mixup_cutmix
 from torch.utils.data.dataloader import default_collate
 import utils.utils as utils
 import utils.configs as configs
-from torchvision.models.feature_extraction import create_feature_extractor
-from collections import defaultdict
+
 
 
 model_names = sorted(name for name in models.__dict__
@@ -143,8 +142,8 @@ expr_name = args.trainer_type + "_" + expr_hash.hexdigest()
 expr_dir = os.path.join(mt_root_directory, expr_name)
 
 
-#if not os.path.exists(expr_dir):
-#    os.makedirs(expr_dir)
+if not os.path.exists(expr_dir):
+    os.makedirs(expr_dir)
 
 # Make checkpoints and metrics directory
 ckpt_folder = "Checkpoints"
@@ -153,9 +152,6 @@ metrics_folder = "Metrics"
 metrics_dir = os.path.join(expr_dir, metrics_folder)
 relu_folder = "ReLUs"
 relu_dir = os.path.join(expr_dir, relu_folder)
-relu_dict = "ReLUs.pkl"
-relu_dict_path = os.path.join(relu_dir, relu_dict)
-"""
 
 if not os.path.exists(relu_dir):
     os.makedirs(relu_dir)
@@ -191,7 +187,7 @@ expr_config_dict = {tup[0]:tup[1] for tup in all_args}
 yaml_file = os.path.join(expr_dir, "Config.yaml")
 with open(yaml_file, 'w') as yaml_out:
     yaml.dump(expr_config_dict, yaml_out)
-"""
+
 def main():
     if args.seed is not None:
         random.seed(args.seed)
@@ -220,10 +216,12 @@ def main_worker(gpu, ngpus_per_node, args):
     global best_acc1
     args.gpu = gpu
 
+    if args.gpu is not None:
+        logger.critical(f"Use GPU: {args.gpu} for training")
 
     # create model
     if args.pretrained:
-
+        logger.critical(f"=> using pre-trained model {args.arch}")
         if args.arch == 'resnet18':
             model = models.__dict__[args.arch](weights=ResNet18_Weights.IMAGENET1K_V2)
         if args.arch == 'resnet50':
@@ -234,7 +232,7 @@ def main_worker(gpu, ngpus_per_node, args):
             if args.arch == 'resnet18':
                model.fc = nn.Linear(in_features=512, out_features=args.num_classes, bias=True)
     else:
-
+        logger.critical(f"=> creating model {args.arch}")
         model = models.__dict__[args.arch]()
         
         if args.new_classifier:
@@ -253,8 +251,9 @@ def main_worker(gpu, ngpus_per_node, args):
             model.fc.weight.requires_grad = True
             model.fc.bias.requires_grad = True
 
-
-    if args.distributed:
+    if not torch.cuda.is_available() and not torch.backends.mps.is_available():
+        logger.critical('using CPU, this will be slow')
+    elif args.distributed:
         # For multiprocessing distributed, DistributedDataParallel constructor
         # should always set the single device scope, otherwise,
         # DistributedDataParallel will use all available devices.
@@ -308,6 +307,15 @@ def main_worker(gpu, ngpus_per_node, args):
     scheduler = CosineAnnealingLR(
             optimizer, T_max=args.epochs, eta_min=args.lr_min
         )
+    """
+    warmup_lr_scheduler = LinearLR(
+                optimizer, start_factor=args.lr_warmup_decay, total_iters=args.lr_warmup_epochs
+            )
+    """
+    """
+    scheduler = SequentialLR(
+                optimizer, schedulers=[warmup_lr_scheduler, main_scheduler], milestones=[args.lr_warmup_epochs])
+    """
     # optionally resume from a checkpoint
     if args.resume:
         if os.path.isfile(args.resume):
@@ -327,11 +335,13 @@ def main_worker(gpu, ngpus_per_node, args):
             model.load_state_dict(checkpoint['state_dict'])
             optimizer.load_state_dict(checkpoint['optimizer'])
             scheduler.load_state_dict(checkpoint['scheduler'])
-    
+            logger.critical(f"=> loaded checkpoint '{args.resume}' (epoch {args.start_epoch})")
+        else:
+            logger.critical(f"=> no checkpoint found at '{args.resume}'")
+
     random_seed=args.seed
     # GO-GO-GO!
     normalize  =  transforms.Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261))
-    
     num_classes = args.num_classes
     mixup_cutmix = get_mixup_cutmix(
         mixup_alpha=args.mixup_alpha, cutmix_alpha=args.cutmix_alpha, num_categories=num_classes, use_v2=args.use_v2
@@ -358,17 +368,24 @@ def main_worker(gpu, ngpus_per_node, args):
     ])
 
     trainset = torchvision.datasets.CIFAR10(root='/bigstor/zsarwar/CIFAR10', train=True,
-                                            download=False, transform=transform_test)
+                                            download=False, transform=transform_train)
     
     train_loader = torch.utils.data.DataLoader(trainset, batch_size=args.batch_size,
-                                            shuffle=True, num_workers=args.workers)
+                                            shuffle=True, num_workers=args.workers, collate_fn=collate_fn)
+
+    valset = torchvision.datasets.CIFAR10(root='/bigstor/zsarwar/CIFAR10', train=False,
+                                        download=False, transform=transform_test
+                                        )
+    val_loader = torch.utils.data.DataLoader(valset, batch_size=1000,
+                                            shuffle=False, num_workers=args.workers)
     
     # Test after training
     # Loading the best checkpoint
     if not args.eval_pretrained:
         best_ckpt_name = "model_best.pth.tar"
         best_ckpt_path = os.path.join(ckpt_dir, best_ckpt_name)
-
+        logger.critical(best_ckpt_path)
+        logger.critical("Testing after training")
         if args.gpu is None:
             checkpoint = torch.load(best_ckpt_path, map_location=loc)
         elif torch.cuda.is_available():
@@ -385,88 +402,10 @@ def main_worker(gpu, ngpus_per_node, args):
         model.load_state_dict(checkpoint['state_dict'])
         #optimizer.load_state_dict(checkpoint['optimizer'])
         scheduler.load_state_dict(checkpoint['scheduler'])
+        logger.critical(f"=> loaded checkpoint '{best_ckpt_path}' (epoch {best_epoch})")
+    
+    validate(val_loader, model, criterion, args)
 
-    # Extract Relus from the training data of layer X
-    class ResNetFeatureExtractor(torch.nn.Module):
-        def __init__(self, model):
-            super().__init__()
-            # Pretrained resnet model
-            m = model
-            return_nodes = {
-                # node_name: user-specified key for output dict
-                'layer2.0.relu': 'layer_2_0_0',
-                'layer2.0.relu_1': 'layer_2_0_1',
-                'layer2.1.relu': 'layer2_1_0',
-                'layer2.1.relu_1': 'layer2_1_1',
-                
-                'layer3.0.relu': 'layer_3_0_0',
-                'layer3.0.relu_1': 'layer_3_0_1',
-                'layer3.1.relu': 'layer3_1_0',
-                'layer3.1.relu_1': 'layer3_1_1',
-
-                'layer4.0.relu': 'layer_4_0_0',
-                'layer4.0.relu_1': 'layer_4_0_1',
-                'layer4.1.relu': 'layer4_1_0',
-                'layer4.1.relu_1': 'layer4_1_1',
-                
-            }
-            self.body = create_feature_extractor(
-                m, return_nodes= return_nodes)
-        def forward(self, x):
-            x = self.body(x)
-            return x
-     
-    model = ResNetFeatureExtractor(model)
-
-    extract_features(train_loader, model, args)
-
-
-
-
-
-    ###################################################################################################
-
-def train(train_loader, model, criterion, optimizer, epoch, device, args):
-    batch_time = AverageMeter('Time', ':6.3f')
-    data_time = AverageMeter('Data', ':6.3f')
-    losses = AverageMeter('Loss', ':.4e')
-    top1 = AverageMeter('Acc@1', ':6.2f')
-    top5 = AverageMeter('Acc@5', ':6.2f')
-    progress = ProgressMeter(
-        len(train_loader),
-        [batch_time, data_time, losses, top1, top5],
-        prefix="Epoch: [{}]".format(epoch))
-
-    # switch to train mode
-    model.train()
-
-    end = time.time()
-    for i, (images, target) in enumerate(train_loader):
-        # measure data loading time
-        data_time.update(time.time() - end)
-
-        # move data to the same device as model
-        images = images.to(device, non_blocking=True)
-        target = target.to(device, non_blocking=True)
-
-        # compute output
-        output = model(images)
-        loss = criterion(output, target)
-
-        # measure accuracy and record loss
-        acc1, acc5 = utils.accuracy(output, target, topk=(1, 2))
-        #f1_score = compute_f1_score(output, target)
-        losses.update(loss.item(), images.size(0))
-        top1.update(acc1.item(), images.size(0))
-        top5.update(acc5.item(), images.size(0))
-
-        # compute gradient and do SGD step
-        optimizer.zero_grad()
-        end = time.time()
-
-        if i % args.print_freq == 0:
-            stats = progress.display(i + 1)
-            
 
 def compute_f1_score(preds, targets):
     pred_classes = torch.argmax(preds, dim=1)
@@ -475,12 +414,9 @@ def compute_f1_score(preds, targets):
     f1_res = f1_score(targets, pred_classes, average='micro')
     return f1_res
 
-def extract_features(val_loader, model, args):
-
-    #req_layers = ['layer_2_0_0','layer_2_0_1','layer2_1_0','layer2_1_1','layer_3_0_0','layer_3_0_1','layer3_1_0','layer3_1_1','layer_4_0_0','layer_4_0_1','layer4_1_0','layer4_1_1']
+def validate(val_loader, model, criterion, args):
     def run_validate(loader, base_progress=0):
         adv_samples = torch.load("/bigstor/zsarwar/SparseDNNs/MT_CIFAR10_full_10_d5f3f545a0883adb9c8f98e2a6ba4ac7/MT_Baseline_d2a45a4dd02a5e037e5954b82387e666/CW/samples.pt")
-        features = defaultdict(list)
         with torch.no_grad():
             end = time.time()
             for i, (images, target) in enumerate(loader):
@@ -493,18 +429,26 @@ def extract_features(val_loader, model, args):
                     target = target.to('mps')
                 if torch.cuda.is_available():
                     target = target.cuda(args.gpu, non_blocking=True)
-                    
+
                 # compute output
-                #output = model(images)
                 output = model(adv_samples)
-                for k in output.keys():
-                    #print(output[k])
-                    features[k].append(output[k])
-                break   
-                
-            with open(relu_dict_path, 'wb' ) as o_file:
-                pickle.dump(features, o_file)
-            
+                #output = model(images)
+                loss = criterion(output, target)
+
+                # measure accuracy and record loss
+                acc1, acc5 = utils.accuracy(output, target, topk=(1, 2))
+                losses.update(loss.item(), images.size(0))
+                top1.update(acc1.item(), images.size(0))
+                top5.update(acc5.item(), images.size(0))
+                # measure elapsed time
+                batch_time.update(time.time() - end)
+                end = time.time()
+
+                if i % args.print_freq == 0:
+                    stats = progress.display(i + 1)
+                    logger.critical(stats)
+                break
+
     batch_time = AverageMeter('Time', ':6.3f', Summary.NONE)
     losses = AverageMeter('Loss', ':.4e', Summary.NONE)
     top1 = AverageMeter('Acc@1', ':6.2f', Summary.AVERAGE)
@@ -530,22 +474,10 @@ def extract_features(val_loader, model, args):
             num_workers=args.workers, pin_memory=True)
         run_validate(aux_val_loader, len(val_loader))
     summ_stats = progress.display_summary()
-  
+    logger.critical(summ_stats)
     return top1.avg
 
-def save_checkpoint(args, state, epoch, is_best, filename='checkpoint.pth.tar'):
-    #ckpt_name = f"{epoch+1}_{filename}"
-    #filename = os.path.join(ckpt_dir, ckpt_name)
-    ckpt_name = "model_best.pth.tar"
-    ckpt_name = os.path.join(ckpt_dir, ckpt_name)
-    torch.save(state, ckpt_name)
-    """
-    if is_best:
-        logger.critical("Saving best model")
-        best_ckpt_name = "model_best.pth.tar"
-        best_ckpt_path = os.path.join(ckpt_dir, best_ckpt_name)
-        shutil.copyfile(filename, best_ckpt_path)
-    """
+
 class Summary(Enum):
     NONE = 0
     AVERAGE = 1
@@ -598,9 +530,7 @@ class AverageMeter(object):
             fmtstr = '{name} {sum:.3f}'
         elif self.summary_type is Summary.COUNT:
             fmtstr = '{name} {count:.3f}'
-        else:
-            raise ValueError('invalid summary type %r' % self.summary_type)
-        
+       
         return fmtstr.format(**self.__dict__)
 
 
@@ -629,4 +559,4 @@ class ProgressMeter(object):
 
 if __name__ == '__main__':
     main()
-    print("Features extracted")
+    print("Model tested")
