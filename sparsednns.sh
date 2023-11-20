@@ -1,8 +1,9 @@
 # Five main components of the Enola Simulator
 CREATE_ROOT=false
 TRAIN_MT_BASELINE=false
-FEATURE_EXTRACTION=true
-TEST_MT_BASELINE=false
+FEATURE_EXTRACTION=false
+RUN_ATTACK=false
+TEST_MT_BASELINE=true
 
 
 #echo $y
@@ -153,11 +154,37 @@ then
     --original_config=$original_config \
     --trainer_type=$trainer_type
 fi
+
 #############################################################################################
+# CW attack parameters
+original_dataset=cifar10
+c=0.02
+steps=200
+lr=0.01
+batch_size=128
 
-resume=/bigstor/zsarwar/SparseDNNs/MT_CIFAR10_full_10_d5f3f545a0883adb9c8f98e2a6ba4ac7/MT_Baseline_d2a45a4dd02a5e037e5954b82387e666/Checkpoints/model_best.pth.tar
+if [ "$RUN_ATTACK" = true ]
+then
+    cd ${home_dir}
+    python3 attack.py \
+    --gpu=$gpu \
+    --base_dir=$base_dir \
+    --root_hash_config=$root_hash_config \
+    --mt_hash_config=$mt_hash_config \
+    --original_dataset=$original_dataset \
+    --model=$model \
+    --batch_size=$batch_size \
+    --lr=$lr \
+    --c=$c \
+    --steps=$steps \
+    --seed=$seed \
+    --num_classes=$num_classes \
+    --trainer_type=$trainer_type
+fi
 
+#############################################################################################
 # TEST 
+test_adversarial=True
 if [ "$TEST_MT_BASELINE" = true ]
 then
     cd ${home_dir}
@@ -179,14 +206,13 @@ then
     --cutmix_alpha=$cutmix_alpha \
     --random_erasing=$random_erasing \
     --model_ema=False \
-    --resume=$resume \
     --pretrained=$pretrained \
     --freeze_layers=$freeze_layers \
     --seed=$seed \
     --num_classes=$num_classes \
-    --new_classifier=$new_classifier \
-    --test_per_class=$test_per_class \
     --original_dataset=$original_dataset \
     --original_config=$original_config \
-    --trainer_type=$trainer_type
+    --trainer_type=$trainer_type \
+    --new_classifier=$new_classifier \
+    --test_adversarial=$test_adversarial
 fi

@@ -29,3 +29,19 @@ class CustomImageDataset(Dataset):
     
 
 
+class CustomImageDataset_Adv(Dataset):
+    def __init__(self, dataset_tuple, transform=None, target_transform=None):
+        self.data = dataset_tuple[0]
+        self.labels = dataset_tuple[1]
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        image = self.data[idx]
+        label = self.labels[idx]
+        return image, label
+    
+
+
+

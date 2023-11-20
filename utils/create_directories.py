@@ -14,6 +14,7 @@ mt_config = root_config + "_" + root_config_hash.hexdigest()
 mt_root_directory = os.path.join(args.base_dir, mt_config)
 mt_baseline_dir = "MT_Baseline"
 datasets_dir = "Datasets"
+attack_dir = "CW"
 metrics_dir = "Metrics"
 
 # Create root
@@ -21,11 +22,13 @@ if not os.path.exists(mt_root_directory):
     os.makedirs(mt_root_directory)
 else:
     print("MT's root directory already exists")
-    #quit()
-
 
 datasets_path = os.path.join(mt_root_directory, datasets_dir)
 if not os.path.exists(datasets_path):
     os.makedirs(datasets_path)
+
+attack_path = os.path.join(mt_root_directory, attack_dir)
+if not os.path.exists(attack_path):
+    os.makedirs(attack_path)
 
 print("Created root directory")
