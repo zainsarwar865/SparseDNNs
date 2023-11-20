@@ -1,9 +1,10 @@
 # Five main components of the Enola Simulator
 CREATE_ROOT=false
 TRAIN_MT_BASELINE=false
-FEATURE_EXTRACTION=false
-RUN_ATTACK=false
+FEATURE_EXTRACTION_BENIGN=true
+RUN_ATTACK=true
 TEST_MT_BASELINE=true
+FEATURE_EXTRACTION_ADVERSARIAL=true
 
 
 #echo $y
@@ -119,10 +120,13 @@ fi
 
 #############################################################################################
 
-#############################################################################################
-# Feature extraction
 
-if [ "$FEATURE_EXTRACTION" = true ]
+# Feature extraction from benign samples
+extract_type=benign
+extract_split=train
+
+
+if [ "$FEATURE_EXTRACTION_BENIGN" = true ]
 then
     cd ${home_dir}
     python3 feature_extraction.py \
@@ -152,7 +156,10 @@ then
     --test_per_class=$test_per_class \
     --original_dataset=$original_dataset \
     --original_config=$original_config \
-    --trainer_type=$trainer_type
+    --trainer_type=$trainer_type \
+    --extract_type=$extract_type \
+    --extract_split=$extract_split
+
 fi
 
 #############################################################################################
@@ -161,7 +168,7 @@ original_dataset=cifar10
 c=0.02
 steps=200
 lr=0.01
-batch_size=128
+batch_size=512
 
 if [ "$RUN_ATTACK" = true ]
 then
@@ -215,4 +222,47 @@ then
     --trainer_type=$trainer_type \
     --new_classifier=$new_classifier \
     --test_adversarial=$test_adversarial
+fi
+
+
+#############################################################################################
+# Feature extraction from adversarial samples
+extract_type=adversarial
+extract_split=test
+
+
+if [ "$FEATURE_EXTRACTION_ADVERSARIAL" = true ]
+then
+    cd ${home_dir}
+    python3 feature_extraction.py \
+    --gpu=$gpu \
+    --base_dir=$base_dir \
+    --root_hash_config=$root_hash_config \
+    --mt_hash_config=$mt_hash_config \
+    --epochs=$epochs \
+    --num_eval_epochs=$num_eval_epochs \
+    --arch=$model \
+    --batch_size=$batch_size \
+    --lr=$lr \
+    --weight_decay=$weight_decay \
+    --lr_warmup_epochs=$lr_warmup_epochs \
+    --lr_warmup_decay=$lr_warmup_decay \
+    --label_smoothing=$label_smoothing \
+    --mixup_alpha=$mixup_alpha \
+    --cutmix_alpha=$cutmix_alpha \
+    --random_erasing=$random_erasing \
+    --model_ema=False \
+    --resume=$resume \
+    --pretrained=$pretrained \
+    --freeze_layers=$freeze_layers \
+    --seed=$seed \
+    --num_classes=$num_classes \
+    --new_classifier=$new_classifier \
+    --test_per_class=$test_per_class \
+    --original_dataset=$original_dataset \
+    --original_config=$original_config \
+    --trainer_type=$trainer_type \
+    --extract_type=$extract_type \
+    --extract_split=$extract_split
+
 fi

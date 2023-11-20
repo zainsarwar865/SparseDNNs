@@ -125,4 +125,4 @@ with open(image_save_path, 'wb') as out_dataset:
     pickle.dump(adv_dataset, out_dataset)
 
 #torch.save(all_adv_images, image_save_path)
-
+print("Attack completed...")
