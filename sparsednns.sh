@@ -1,12 +1,10 @@
 # Five main components of the Enola Simulator
 CREATE_ROOT=false
 TRAIN_MT_BASELINE=false
+RUN_ATTACK=false
+TEST_ADVERSARIAL=false
 FEATURE_EXTRACTION_BENIGN=true
-RUN_ATTACK=true
-TEST_MT_BASELINE=true
 FEATURE_EXTRACTION_ADVERSARIAL=true
-
-
 #echo $y
 BashName=${0##*/}
 #x=FileName
@@ -17,7 +15,7 @@ home_dir=/home/zsarwar/Projects/SparseDNNs
 # Generic params
 gpu=1
 seed=42
-
+attack="DeepFool"
 
 # Setup the directory for an experiment
 #############################################################################################
@@ -38,10 +36,6 @@ then
     --root_hash_config=$root_hash_config \
     
 fi
-
-#############################################################################################
-
-
 
 #############################################################################################
 # Copy bash script to root dir
@@ -119,150 +113,345 @@ then
 fi
 
 #############################################################################################
+# Attack parameters
 
+RUN_ATTACK_TRAIN=true
+RUN_ATTACK_TEST=true
 
-# Feature extraction from benign samples
-extract_type=benign
-extract_split=train
-
-
-if [ "$FEATURE_EXTRACTION_BENIGN" = true ]
-then
-    cd ${home_dir}
-    python3 feature_extraction.py \
-    --gpu=$gpu \
-    --base_dir=$base_dir \
-    --root_hash_config=$root_hash_config \
-    --mt_hash_config=$mt_hash_config \
-    --epochs=$epochs \
-    --num_eval_epochs=$num_eval_epochs \
-    --arch=$model \
-    --batch_size=$batch_size \
-    --lr=$lr \
-    --weight_decay=$weight_decay \
-    --lr_warmup_epochs=$lr_warmup_epochs \
-    --lr_warmup_decay=$lr_warmup_decay \
-    --label_smoothing=$label_smoothing \
-    --mixup_alpha=$mixup_alpha \
-    --cutmix_alpha=$cutmix_alpha \
-    --random_erasing=$random_erasing \
-    --model_ema=False \
-    --resume=$resume \
-    --pretrained=$pretrained \
-    --freeze_layers=$freeze_layers \
-    --seed=$seed \
-    --num_classes=$num_classes \
-    --new_classifier=$new_classifier \
-    --test_per_class=$test_per_class \
-    --original_dataset=$original_dataset \
-    --original_config=$original_config \
-    --trainer_type=$trainer_type \
-    --extract_type=$extract_type \
-    --extract_split=$extract_split
-
-fi
-
-#############################################################################################
-# CW attack parameters
+# Attack parameters
 original_dataset=cifar10
 c=0.02
 steps=200
 lr=0.01
 batch_size=512
+total_attack_samples_train=5120
+attack_split='train'
+
+total_attack_samples_test=5120
 
 if [ "$RUN_ATTACK" = true ]
 then
-    cd ${home_dir}
-    python3 attack.py \
-    --gpu=$gpu \
-    --base_dir=$base_dir \
-    --root_hash_config=$root_hash_config \
-    --mt_hash_config=$mt_hash_config \
-    --original_dataset=$original_dataset \
-    --model=$model \
-    --batch_size=$batch_size \
-    --lr=$lr \
-    --c=$c \
-    --steps=$steps \
-    --seed=$seed \
-    --num_classes=$num_classes \
-    --trainer_type=$trainer_type
+
+
+    if [ "$RUN_ATTACK_TRAIN" = true ]
+    then
+        cd ${home_dir}
+        python3 attack.py \
+        --gpu=$gpu \
+        --base_dir=$base_dir \
+        --root_hash_config=$root_hash_config \
+        --mt_hash_config=$mt_hash_config \
+        --original_dataset=$original_dataset \
+        --model=$model \
+        --batch_size=$batch_size \
+        --lr=$lr \
+        --c=$c \
+        --steps=$steps \
+        --seed=$seed \
+        --attack=$attack \
+        --attack_split=$attack_split \
+        --total_attack_samples=$total_attack_samples_train \
+        --num_classes=$num_classes \
+        --trainer_type=$trainer_type
+    fi
+
+
+attack_split='test'
+
+
+    if [ "$RUN_ATTACK_TEST" = true ]
+    then
+        
+        cd ${home_dir}
+        python3 attack.py \
+        --gpu=$gpu \
+        --base_dir=$base_dir \
+        --root_hash_config=$root_hash_config \
+        --mt_hash_config=$mt_hash_config \
+        --original_dataset=$original_dataset \
+        --model=$model \
+        --batch_size=$batch_size \
+        --lr=$lr \
+        --c=$c \
+        --steps=$steps \
+        --seed=$seed \
+        --attack=$attack \
+        --attack_split=$attack_split \
+        --total_attack_samples=$total_attack_samples_test \
+        --num_classes=$num_classes \
+        --trainer_type=$trainer_type
+    fi
 fi
 
 #############################################################################################
-# TEST 
+# Test adversarial samples
+
+TEST_MT_ADVERSARIAL_TRAIN=true
+TEST_MT_ADVERSARIAL_TEST=true
+
 test_adversarial=True
-if [ "$TEST_MT_BASELINE" = true ]
+
+
+if [ "$TEST_ADVERSARIAL" = true ]
 then
-    cd ${home_dir}
-    python3 test.py \
-    --gpu=$gpu \
-    --base_dir=$base_dir \
-    --root_hash_config=$root_hash_config \
-    --mt_hash_config=$mt_hash_config \
-    --epochs=$epochs \
-    --num_eval_epochs=$num_eval_epochs \
-    --arch=$model \
-    --batch_size=$batch_size \
-    --lr=$lr \
-    --weight_decay=$weight_decay \
-    --lr_warmup_epochs=$lr_warmup_epochs \
-    --lr_warmup_decay=$lr_warmup_decay \
-    --label_smoothing=$label_smoothing \
-    --mixup_alpha=$mixup_alpha \
-    --cutmix_alpha=$cutmix_alpha \
-    --random_erasing=$random_erasing \
-    --model_ema=False \
-    --pretrained=$pretrained \
-    --freeze_layers=$freeze_layers \
-    --seed=$seed \
-    --num_classes=$num_classes \
-    --original_dataset=$original_dataset \
-    --original_config=$original_config \
-    --trainer_type=$trainer_type \
-    --new_classifier=$new_classifier \
-    --test_adversarial=$test_adversarial
+
+    attack_split='train'
+    if [ "$TEST_MT_ADVERSARIAL_TRAIN" = true ]
+    then
+        cd ${home_dir}
+        python3 test.py \
+        --gpu=$gpu \
+        --base_dir=$base_dir \
+        --root_hash_config=$root_hash_config \
+        --mt_hash_config=$mt_hash_config \
+        --epochs=$epochs \
+        --num_eval_epochs=$num_eval_epochs \
+        --arch=$model \
+        --batch_size=$batch_size \
+        --lr=$lr \
+        --weight_decay=$weight_decay \
+        --lr_warmup_epochs=$lr_warmup_epochs \
+        --lr_warmup_decay=$lr_warmup_decay \
+        --label_smoothing=$label_smoothing \
+        --mixup_alpha=$mixup_alpha \
+        --cutmix_alpha=$cutmix_alpha \
+        --random_erasing=$random_erasing \
+        --model_ema=False \
+        --pretrained=$pretrained \
+        --freeze_layers=$freeze_layers \
+        --seed=$seed \
+        --num_classes=$num_classes \
+        --original_dataset=$original_dataset \
+        --original_config=$original_config \
+        --trainer_type=$trainer_type \
+        --new_classifier=$new_classifier \
+        --test_adversarial=$test_adversarial \
+        --attack_split=$attack_split \
+        --total_attack_samples=$total_attack_samples_train \
+        --attack=$attack
+
+    fi
+
+    attack_split='test'
+    if [ "$TEST_MT_ADVERSARIAL_TEST" = true ]
+    then
+        cd ${home_dir}
+        python3 test.py \
+        --gpu=$gpu \
+        --base_dir=$base_dir \
+        --root_hash_config=$root_hash_config \
+        --mt_hash_config=$mt_hash_config \
+        --epochs=$epochs \
+        --num_eval_epochs=$num_eval_epochs \
+        --arch=$model \
+        --batch_size=$batch_size \
+        --lr=$lr \
+        --weight_decay=$weight_decay \
+        --lr_warmup_epochs=$lr_warmup_epochs \
+        --lr_warmup_decay=$lr_warmup_decay \
+        --label_smoothing=$label_smoothing \
+        --mixup_alpha=$mixup_alpha \
+        --cutmix_alpha=$cutmix_alpha \
+        --random_erasing=$random_erasing \
+        --model_ema=False \
+        --pretrained=$pretrained \
+        --freeze_layers=$freeze_layers \
+        --seed=$seed \
+        --num_classes=$num_classes \
+        --original_dataset=$original_dataset \
+        --original_config=$original_config \
+        --trainer_type=$trainer_type \
+        --new_classifier=$new_classifier \
+        --test_adversarial=$test_adversarial \
+        --attack_split=$attack_split \
+        --total_attack_samples=$total_attack_samples_test \
+        --attack=$attack
+
+
+    fi
+
+fi
+#############################################################################################
+# Feature extraction from benign samples
+
+
+if [ "$FEATURE_EXTRACTION_BENIGN" = true ]
+then
+
+    FEATURE_EXTRACTION_BENIGN_TRAIN=true
+    FEATURE_EXTRACTION_BENIGN_TEST=true
+
+    extract_type=benign
+    extract_split=train
+
+    if [ "$FEATURE_EXTRACTION_BENIGN_TRAIN" = true ]
+    then
+        cd ${home_dir}
+        python3 feature_extraction.py \
+        --gpu=$gpu \
+        --base_dir=$base_dir \
+        --root_hash_config=$root_hash_config \
+        --mt_hash_config=$mt_hash_config \
+        --epochs=$epochs \
+        --num_eval_epochs=$num_eval_epochs \
+        --arch=$model \
+        --batch_size=$batch_size \
+        --lr=$lr \
+        --weight_decay=$weight_decay \
+        --lr_warmup_epochs=$lr_warmup_epochs \
+        --lr_warmup_decay=$lr_warmup_decay \
+        --label_smoothing=$label_smoothing \
+        --mixup_alpha=$mixup_alpha \
+        --cutmix_alpha=$cutmix_alpha \
+        --random_erasing=$random_erasing \
+        --model_ema=False \
+        --resume=$resume \
+        --pretrained=$pretrained \
+        --freeze_layers=$freeze_layers \
+        --seed=$seed \
+        --num_classes=$num_classes \
+        --new_classifier=$new_classifier \
+        --test_per_class=$test_per_class \
+        --original_dataset=$original_dataset \
+        --original_config=$original_config \
+        --trainer_type=$trainer_type \
+        --extract_type=$extract_type \
+        --extract_split=$extract_split \
+        --total_attack_samples=$total_attack_samples_train \
+        --attack=$attack
+
+    fi
+
+
+    extract_split=test
+
+    if [ "$FEATURE_EXTRACTION_BENIGN_TEST" = true ]
+    then
+        cd ${home_dir}
+        python3 feature_extraction.py \
+        --gpu=$gpu \
+        --base_dir=$base_dir \
+        --root_hash_config=$root_hash_config \
+        --mt_hash_config=$mt_hash_config \
+        --epochs=$epochs \
+        --num_eval_epochs=$num_eval_epochs \
+        --arch=$model \
+        --batch_size=$batch_size \
+        --lr=$lr \
+        --weight_decay=$weight_decay \
+        --lr_warmup_epochs=$lr_warmup_epochs \
+        --lr_warmup_decay=$lr_warmup_decay \
+        --label_smoothing=$label_smoothing \
+        --mixup_alpha=$mixup_alpha \
+        --cutmix_alpha=$cutmix_alpha \
+        --random_erasing=$random_erasing \
+        --model_ema=False \
+        --resume=$resume \
+        --pretrained=$pretrained \
+        --freeze_layers=$freeze_layers \
+        --seed=$seed \
+        --num_classes=$num_classes \
+        --new_classifier=$new_classifier \
+        --test_per_class=$test_per_class \
+        --original_dataset=$original_dataset \
+        --original_config=$original_config \
+        --trainer_type=$trainer_type \
+        --extract_type=$extract_type \
+        --extract_split=$extract_split \
+        --total_attack_samples=$total_attack_samples_test \
+        --attack=$attack
+
+    fi
+
+
 fi
 
-
 #############################################################################################
-# Feature extraction from adversarial samples
-extract_type=adversarial
-extract_split=test
 
+# Feature extraction from adversarial samples
 
 if [ "$FEATURE_EXTRACTION_ADVERSARIAL" = true ]
 then
-    cd ${home_dir}
-    python3 feature_extraction.py \
-    --gpu=$gpu \
-    --base_dir=$base_dir \
-    --root_hash_config=$root_hash_config \
-    --mt_hash_config=$mt_hash_config \
-    --epochs=$epochs \
-    --num_eval_epochs=$num_eval_epochs \
-    --arch=$model \
-    --batch_size=$batch_size \
-    --lr=$lr \
-    --weight_decay=$weight_decay \
-    --lr_warmup_epochs=$lr_warmup_epochs \
-    --lr_warmup_decay=$lr_warmup_decay \
-    --label_smoothing=$label_smoothing \
-    --mixup_alpha=$mixup_alpha \
-    --cutmix_alpha=$cutmix_alpha \
-    --random_erasing=$random_erasing \
-    --model_ema=False \
-    --resume=$resume \
-    --pretrained=$pretrained \
-    --freeze_layers=$freeze_layers \
-    --seed=$seed \
-    --num_classes=$num_classes \
-    --new_classifier=$new_classifier \
-    --test_per_class=$test_per_class \
-    --original_dataset=$original_dataset \
-    --original_config=$original_config \
-    --trainer_type=$trainer_type \
-    --extract_type=$extract_type \
-    --extract_split=$extract_split
 
+    FEATURE_EXTRACTION_ADVERSARIAL_TRAIN=true
+    FEATURE_EXTRACTION_ADVERSARIAL_TEST=true
+
+    extract_type=adversarial
+    extract_split=train
+
+    if [ "$FEATURE_EXTRACTION_ADVERSARIAL_TRAIN" = true ]
+    then
+        cd ${home_dir}
+        python3 feature_extraction.py \
+        --gpu=$gpu \
+        --base_dir=$base_dir \
+        --root_hash_config=$root_hash_config \
+        --mt_hash_config=$mt_hash_config \
+        --epochs=$epochs \
+        --num_eval_epochs=$num_eval_epochs \
+        --arch=$model \
+        --batch_size=$batch_size \
+        --lr=$lr \
+        --weight_decay=$weight_decay \
+        --lr_warmup_epochs=$lr_warmup_epochs \
+        --lr_warmup_decay=$lr_warmup_decay \
+        --label_smoothing=$label_smoothing \
+        --mixup_alpha=$mixup_alpha \
+        --cutmix_alpha=$cutmix_alpha \
+        --random_erasing=$random_erasing \
+        --model_ema=False \
+        --resume=$resume \
+        --pretrained=$pretrained \
+        --freeze_layers=$freeze_layers \
+        --seed=$seed \
+        --num_classes=$num_classes \
+        --new_classifier=$new_classifier \
+        --test_per_class=$test_per_class \
+        --original_dataset=$original_dataset \
+        --original_config=$original_config \
+        --trainer_type=$trainer_type \
+        --extract_type=$extract_type \
+        --extract_split=$extract_split \
+        --total_attack_samples=$total_attack_samples_train \
+        --attack=$attack
+    fi
+
+    extract_split=test
+
+    if [ "$FEATURE_EXTRACTION_ADVERSARIAL_TEST" = true ]
+    then
+        cd ${home_dir}
+        python3 feature_extraction.py \
+        --gpu=$gpu \
+        --base_dir=$base_dir \
+        --root_hash_config=$root_hash_config \
+        --mt_hash_config=$mt_hash_config \
+        --epochs=$epochs \
+        --num_eval_epochs=$num_eval_epochs \
+        --arch=$model \
+        --batch_size=$batch_size \
+        --lr=$lr \
+        --weight_decay=$weight_decay \
+        --lr_warmup_epochs=$lr_warmup_epochs \
+        --lr_warmup_decay=$lr_warmup_decay \
+        --label_smoothing=$label_smoothing \
+        --mixup_alpha=$mixup_alpha \
+        --cutmix_alpha=$cutmix_alpha \
+        --random_erasing=$random_erasing \
+        --model_ema=False \
+        --resume=$resume \
+        --pretrained=$pretrained \
+        --freeze_layers=$freeze_layers \
+        --seed=$seed \
+        --num_classes=$num_classes \
+        --new_classifier=$new_classifier \
+        --test_per_class=$test_per_class \
+        --original_dataset=$original_dataset \
+        --original_config=$original_config \
+        --trainer_type=$trainer_type \
+        --extract_type=$extract_type \
+        --extract_split=$extract_split \
+        --total_attack_samples=$total_attack_samples_test \
+        --attack=$attack
+    fi
 fi

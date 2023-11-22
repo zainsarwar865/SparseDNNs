@@ -14,11 +14,14 @@ parser.add_argument('--model', type=str)
 parser.add_argument('--lr', dest='lr', type=float)
 parser.add_argument('--c', type=float)
 parser.add_argument('--steps',  type=int)
+parser.add_argument('--attack',  type=str)
 parser.add_argument('--momentum', default=0.9, type=float, metavar='M')
 parser.add_argument('--num_classes', type=int)
 parser.add_argument('--original_dataset', type=str)
 parser.add_argument('--trainer_type', type=str)
 parser.add_argument('--gpu', type=str)
+parser.add_argument('--attack_split', type=str)
+parser.add_argument('--total_attack_samples', type=int)
 parser.add_argument('--seed', type=int, help="seed for pandas sampling")
 
 args = parser.parse_args()
@@ -34,29 +37,48 @@ from utils import configs
 import hashlib
 sys.path.append("/home/zsarwar/Projects/SparseDNNs/adversarial-attacks-pytorch")
 import torchattacks
-from torchattacks import CW
+from torchattacks import CW, DeepFool
 from utils.utils_2 import imshow, get_pred
 import matplotlib.pyplot as plt
 import pickle
+from torch.utils.data import DataLoader, Subset
+import numpy as np
 
+np.random.seed(args.seed)
+
+print("Starting attack...")
 
 # GO-GO-GO!
 normalize  =  transforms.Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261))
     
 
 # Undo normalization for now
-transform_test = transforms.Compose([
+transformation = transforms.Compose([
     transforms.ToTensor(), 
     ])
 dataset_path = configs.dataset_root_paths[args.original_dataset]
 
-valset = torchvision.datasets.CIFAR10(root=dataset_path, train=False,
-                                    download=False, transform=transform_test
-                                        )
-                                    
-dataloader = torch.utils.data.DataLoader(valset, batch_size=args.batch_size,
-                                            shuffle=False, num_workers=args.workers)
+
+
+if args.attack_split == "train":
+
+    trainset = torchvision.datasets.CIFAR10(root=dataset_path, train=True,
+                                                download=False, transform=transformation)
+    random_indices = np.random.randint(low=0, high = len(trainset), size=(args.total_attack_samples))
+    trainset = Subset(trainset, indices=random_indices)
+    dataloader = DataLoader(trainset, batch_size=args.batch_size,
+                                                shuffle=True, num_workers=args.workers)
+
+elif args.attack_split == 'test':
+    testset = torchvision.datasets.CIFAR10(root=dataset_path, train=False,
+                                        download=False, transform=transformation
+                                            )
+    random_indices = np.random.randint(low=0, high = len(testset), size=(args.total_attack_samples))
+    testset = Subset(testset, indices=random_indices)
+    dataloader = DataLoader(testset, batch_size=args.batch_size,
+                                                shuffle=False, num_workers=args.workers)
    
+
 if args.model == 'resnet18':
     model = resnet18()
     model.fc = nn.Linear(in_features=512, out_features=args.num_classes, bias=True)
@@ -94,29 +116,27 @@ std = (0.247, 0.243, 0.261)
 all_adv_images = None
 all_labels = None
 
-
-images, labels = next(iter(dataloader))
-
-atk = CW(model, c=args.c,  steps=args.steps, lr=args.lr)
+if args.attack == "CW":
+    atk = CW(model, c=args.c,  steps=args.steps, lr=args.lr)
+elif args.attack == "DeepFool":
+    atk = DeepFool(model, steps=50, overshoot=0.02)
 
 atk.set_normalization_used(mean=[0.4914, 0.4822, 0.4465], std=[0.247, 0.243, 0.261])
 
-adv_images = atk(images, labels)
-#adv_images = adv_images.to(device)
+for images, labels in dataloader:
+    adv_images = atk(images, labels)
+    if isinstance(all_adv_images, torch.Tensor):
+        all_adv_images = torch.concat((all_adv_images, adv_images), dim=0)
+    else:
+        all_adv_images = adv_images
+    if isinstance(all_labels, torch.Tensor):
+        all_labels = torch.concat((all_labels, labels), dim=0)
+    else:
+        all_labels = labels
 
-if isinstance(all_adv_images, torch.Tensor):
-    all_adv_images = torch.concat((all_adv_images, adv_images), dim=0)
-else:
-    all_adv_images = adv_images
-
-
-if isinstance(all_labels, torch.Tensor):
-    all_labels = torch.concat((all_labels, labels), dim=0)
-else:
-    all_labels = labels
 
 # Save adversarial images
-image_save_config = "CW/adv_samples.pickle"
+image_save_config = f"Adversarial_Datasets/{args.attack}_adv_samples_{args.total_attack_samples}_{args.attack_split}.pickle"
 image_save_path  = os.path.join(expr_dir, image_save_config)
 
 adv_dataset = [all_adv_images, all_labels]
@@ -124,5 +144,4 @@ adv_dataset = [all_adv_images, all_labels]
 with open(image_save_path, 'wb') as out_dataset:
     pickle.dump(adv_dataset, out_dataset)
 
-#torch.save(all_adv_images, image_save_path)
 print("Attack completed...")

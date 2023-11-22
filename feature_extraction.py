@@ -84,6 +84,8 @@ parser.add_argument('--original_dataset', type=str)
 parser.add_argument('--original_config', type=str)
 parser.add_argument('--extract_type', type=str)
 parser.add_argument('--extract_split', type=str)
+parser.add_argument('--total_attack_samples', type=int)
+parser.add_argument('--attack', type=str)
 args = parser.parse_args()
 
 # Handle bash boolean variables
@@ -154,17 +156,10 @@ metrics_dir = os.path.join(expr_dir, metrics_folder)
 relu_folder = "ReLUs"
 relu_dir = os.path.join(expr_dir, relu_folder)
 
-if args.extract_split == 'train':
-    relu_dict = "ReLUs_train.pkl"
 
-elif args.extract_split == 'test':
-    if args.extract_type == 'benign':
-        relu_dict = "ReLUs_test_benign.pkl"
-    if args.extract_type == 'adversarial':
-        relu_dict = "ReLUs_test_adversarial.pkl"
+relu_dict = f"ReLUs_{args.attack}_{args.extract_split}_{args.extract_type}.pkl"
+
 relu_dict_path = os.path.join(relu_dir, relu_dict)
-
-
 
 
 # Create log files
@@ -377,28 +372,38 @@ def main_worker(gpu, ngpus_per_node, args):
     ])
 
 
+    if args.extract_split == 'train':
 
+        if args.extract_type == 'benign':        
+            trainset = torchvision.datasets.CIFAR10(root='/bigstor/zsarwar/CIFAR10', train=True,
+                                                    download=False, transform=transform_test)
+        elif args.extract_type == 'adversarial':
+            # Load adversarial dataset
+            adv_dataset_config = f"Adversarial_Datasets/{args.attack}_adv_samples_{args.total_attack_samples}_{args.extract_split}.pickle"
+            adv_dataset_path = os.path.join(expr_dir, adv_dataset_config)
 
-    trainset = torchvision.datasets.CIFAR10(root='/bigstor/zsarwar/CIFAR10', train=True,
-                                            download=False, transform=transform_test)
-    
-    train_loader = torch.utils.data.DataLoader(trainset, batch_size=args.batch_size,
-                                            shuffle=True, num_workers=args.workers)
+            with open(adv_dataset_path, 'rb') as adv_set:
+                adv_samples = pickle.load(adv_set)
+            trainset = CustomImageDataset_Adv(adv_samples)
+            
+        train_loader = torch.utils.data.DataLoader(trainset, batch_size=args.batch_size,
+                                                shuffle=True, num_workers=args.workers)
 
-    if args.extract_type == 'benign':
-        valset = torchvision.datasets.CIFAR10(root='/bigstor/zsarwar/CIFAR10', train=False,
-                                            download=False, transform=transform_test)
-    elif args.extract_type == 'adversarial':
-        # Load adversarial dataset
-        adv_dataset_config = "CW/adv_samples.pickle"
-        adv_dataset_path = os.path.join(expr_dir, adv_dataset_config)
+    elif args.extract_split == 'test':
+        if args.extract_type == 'benign':
+            valset = torchvision.datasets.CIFAR10(root='/bigstor/zsarwar/CIFAR10', train=False,
+                                                download=False, transform=transform_test)
+        elif args.extract_type == 'adversarial':
+            # Load adversarial dataset
+            adv_dataset_config = f"Adversarial_Datasets/{args.attack}_adv_samples_{args.total_attack_samples}_{args.extract_split}.pickle"
+            adv_dataset_path = os.path.join(expr_dir, adv_dataset_config)
 
-        with open(adv_dataset_path, 'rb') as adv_set:
-            adv_samples = pickle.load(adv_set)
-        valset = CustomImageDataset_Adv(adv_samples)
+            with open(adv_dataset_path, 'rb') as adv_set:
+                adv_samples = pickle.load(adv_set)
+            valset = CustomImageDataset_Adv(adv_samples)
 
-    val_loader = torch.utils.data.DataLoader(valset, batch_size=args.batch_size,
-                                            shuffle=False, num_workers=args.workers)
+        val_loader = torch.utils.data.DataLoader(valset, batch_size=args.batch_size,
+                                                shuffle=False, num_workers=args.workers)
     
 
     # Test after training
@@ -591,14 +596,10 @@ def extract_features(val_loader, model, args):
                     target = target.cuda(args.gpu, non_blocking=True)
                 # compute output
                 output = model(images)
-
+                
                 for k in output.keys():
                     t_k = output[k].cpu()
                     features[k].append(t_k)
-                if args.extract_split == 'test':
-                     break   
-            
-
 
             with open(relu_dict_path, 'wb') as o_file:
                 pickle.dump(features, o_file)

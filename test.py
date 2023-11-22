@@ -81,6 +81,9 @@ parser.add_argument('--original_dataset', type=str)
 parser.add_argument('--original_config', type=str)
 parser.add_argument('--new_classifier', type=str)
 parser.add_argument('--test_adversarial', type=str)
+parser.add_argument('--attack', type=str)
+parser.add_argument('--attack_split', type=str)
+parser.add_argument('--total_attack_samples', type=int)
 
 
 args = parser.parse_args()
@@ -173,6 +176,7 @@ yaml_file = os.path.join(expr_dir, "Config.yaml")
 with open(yaml_file, 'w') as yaml_out:
     yaml.dump(expr_config_dict, yaml_out)
 
+print("Starting test...")
 
 def main():
     if args.seed is not None:
@@ -314,7 +318,7 @@ def main_worker(gpu, ngpus_per_node, args):
 
     if args.test_adversarial:
         # Load adversarial dataset
-        adv_dataset_config = "CW/adv_samples.pickle"
+        adv_dataset_config = f"Adversarial_Datasets/{args.attack}_adv_samples_{args.total_attack_samples}_{args.attack_split}.pickle"
         adv_dataset_path = os.path.join(expr_dir, adv_dataset_config)
 
         with open(adv_dataset_path, 'rb') as adv_set:
@@ -352,11 +356,8 @@ def main_worker(gpu, ngpus_per_node, args):
     #optimizer.load_state_dict(checkpoint['optimizer'])
     scheduler.load_state_dict(checkpoint['scheduler'])
     logger.critical(f"=> loaded checkpoint '{best_ckpt_path}' (epoch {best_epoch})")
-
+    logger.critical(f"Evaluating {args.attack_split}")
     validate(val_loader, model, criterion, args)
-
-    
-
 
 
 

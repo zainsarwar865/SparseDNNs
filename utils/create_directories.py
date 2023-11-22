@@ -14,7 +14,7 @@ mt_config = root_config + "_" + root_config_hash.hexdigest()
 mt_root_directory = os.path.join(args.base_dir, mt_config)
 mt_baseline_dir = "MT_Baseline"
 datasets_dir = "Datasets"
-attack_dir = "CW"
+attack_dir = "Adversarial_Datasets"
 metrics_dir = "Metrics"
 
 # Create root
