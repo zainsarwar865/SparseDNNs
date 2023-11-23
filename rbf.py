@@ -1,5 +1,26 @@
+import argparse
 import os
-os.environ["CUDA_VISIBLE_DEVICES"]="1"
+
+parser = argparse.ArgumentParser(description='PyTorch Training')
+parser.add_argument('--root_hash_config', type=str)
+parser.add_argument('--base_dir')
+parser.add_argument('--mt_hash_config', type=str)
+parser.add_argument('--seed', type=int, help="seed for pandas sampling")
+parser.add_argument('--gpu', type=int)
+parser.add_argument('--total_attack_samples', type=int)
+parser.add_argument('--attack', type=str)
+parser.add_argument('--trainer_type', type=str)
+
+args = parser.parse_args()
+
+os.environ["CUDA_VISIBLE_DEVICES"]=str(args.gpu)
+
+import random
+import shutil
+import time
+import warnings
+from enum import Enum
+import yaml
 from collections import defaultdict
 import pickle
 import torch
@@ -9,38 +30,170 @@ import numpy as np
 import pandas as pd
 from sklearn.svm import OneClassSVM
 import torchvision
-with open("/bigstor/zsarwar/SparseDNNs/MT_CIFAR10_full_10_d5f3f545a0883adb9c8f98e2a6ba4ac7/MT_Baseline_d2a45a4dd02a5e037e5954b82387e666/ReLUs/ReLUs_Clean.pkl", 'rb') as iffile:
-    features = pickle.load(iffile)
-features.keys()
-layer = 'layer_4_0_1'
-features = features[layer]
-features_matrix = None
-
-for i in range(len(features)):
-    if isinstance(features_matrix, torch.Tensor):
-        features_matrix = torch.cat((features_matrix, features[i]))
-    else:
-        features_matrix = features[i]
-
-features = None
-features_matrix = torch.flatten(features_matrix, start_dim=1, end_dim=-1)
-# Quantize
-# Comput per-dimension mean
-dim_mean = features_matrix.mean(dim=0)
-binarized_matrix = torch.where(features_matrix >= dim_mean, torch.ones_like(features_matrix), torch.zeros_like(features_matrix))
-features_matrix = None
-
-torch.cuda.empty_cache()
-binarized_matrix = binarized_matrix.cpu().numpy()
+from sklearn.model_selection import GridSearchCV, StratifiedShuffleSplit
+from sklearn.svm import SVC
+import hashlib
+import logging
 
 
-model = OneClassSVM(kernel='rbf')
-model.fit(binarized_matrix)
-# save
-#with open('/bigstor/zsarwar/SparseDNNs/MT_CIFAR10_full_10_d5f3f545a0883adb9c8f98e2a6ba4ac7/MT_Baseline_d2a45a4dd02a5e037e5954b82387e666/RBF/rbf_detector.pkl','wb') as f:
-    #pickle.dump(model,f)
-with open('/bigstor/zsarwar/SparseDNNs/MT_CIFAR10_full_10_d5f3f545a0883adb9c8f98e2a6ba4ac7/MT_Baseline_d2a45a4dd02a5e037e5954b82387e666/RBF/rbf_detector.pkl', 'rb') as f:
-    model = pickle.load(f)
-test_data = binarized_matrix[0:1000, :]
-res = model.predict(test_data)
-np.where(res == 1)[0].shape
+np.random.seed(args.seed)
+
+
+
+def load_data(path, label):
+    with open(path, 'rb') as iffile:
+        features = pickle.load(iffile)
+    layer = 'flatten'
+    features = features[layer]
+    features_matrix = None
+
+    for i in range(len(features)):
+        if isinstance(features_matrix, torch.Tensor):
+            features_matrix = torch.cat((   features_matrix, features[i]))
+        else:
+            features_matrix = features[i]
+
+    features = None    
+    features_matrix = torch.flatten(features_matrix, start_dim=1, end_dim=-1)
+    y = np.empty(features_matrix.shape[0])
+    y.fill(label)
+    return [features_matrix, y]
+
+
+
+def unison_shuffled_copies(x_ben, y_ben, x_adv, y_adv):
+    X = np.concatenate((x_ben, x_adv), axis=0)
+    y = np.concatenate((y_ben, y_adv), axis=0)
+    assert len(X) == len(y)
+    p = np.random.permutation(len(X))
+    return X[p], y[p]
+
+
+
+
+def get_paths(base_path, attack_type):
+    relu_dir = "ReLUs"
+    train_benign = f"ReLUs_{attack_type}_train_benign.pkl"
+    train_adversarial = f"ReLUs_{attack_type}_train_adversarial.pkl"
+    test_benign = f"ReLUs_{attack_type}_test_benign.pkl"
+    test_adversarial = f"ReLUs_{attack_type}_test_adversarial.pkl"
+
+    train_benign = os.path.join(base_path, relu_dir, train_benign)
+    train_adversarial = os.path.join(base_path, relu_dir,  train_adversarial)
+    test_benign = os.path.join(base_path,  relu_dir, test_benign)
+    test_adversarial = os.path.join(base_path,  relu_dir, test_adversarial)
+
+    all_paths = [train_benign,train_adversarial,test_benign,test_adversarial]
+
+    return all_paths
+
+print("Training RBF...")
+
+
+best_acc1 = 0
+
+root_config = args.root_hash_config
+root_config_hash = (hashlib.md5(root_config.encode('UTF-8')))
+mt_config = root_config + "_" + root_config_hash.hexdigest()
+
+# Every file should be created inside this directory
+mt_root_directory = os.path.join(args.base_dir, mt_config)
+
+# Check trainer type
+if args.trainer_type == "MT_Baseline":
+    expr_config = args.mt_hash_config 
+
+expr_hash = (hashlib.md5(expr_config.encode('UTF-8')))
+expr_name = args.trainer_type + "_" + expr_hash.hexdigest()
+expr_dir = os.path.join(mt_root_directory, expr_name)
+
+
+logging_path = os.path.join(expr_dir,"train_val_log.log")
+
+
+logging.basicConfig(filename=logging_path,
+                    format='%(asctime)s %(message)s',
+                    filemode='w')
+ 
+# Creating an object
+logger = logging.getLogger()
+ 
+# Setting the threshold of logger to DEBUG
+logger.setLevel(logging.INFO)
+
+
+# Create and save YAML file
+expr_config_dict = {}
+all_args = args._get_kwargs()
+expr_config_dict = {tup[0]:tup[1] for tup in all_args}
+yaml_file = os.path.join(expr_dir, "Config.yaml")
+with open(yaml_file, 'w') as yaml_out:
+    yaml.dump(expr_config_dict, yaml_out)
+
+
+base_path = expr_dir
+attack_type = args.attack
+train_benign,train_adversarial,test_benign,test_adversarial = get_paths(base_path, attack_type)
+
+
+#"--------------------"
+train_benign = load_data(train_benign, 1)
+train_adversarial = load_data(train_adversarial, 0)
+test_benign = load_data(test_benign, 1)
+test_adversarial = load_data(test_adversarial, 0)
+min_train = min(train_benign[0].shape[0], train_adversarial[0].shape[0])
+min_test = min(test_benign[0].shape[0], test_adversarial[0].shape[0])
+# Subsample the larger sets
+
+rand_indices = np.random.choice(train_benign[0].shape[0], size=min_train, replace=False)
+train_benign[0] = train_benign[0][rand_indices] 
+train_benign[1] = train_benign[1][rand_indices]
+
+rand_indices = np.random.choice(test_benign[0].shape[0], size=min_test, replace=False)
+test_benign[0] = test_benign[0][rand_indices] 
+test_benign[1] = test_benign[1][rand_indices]
+
+X_train, y_train = unison_shuffled_copies(train_benign[0], train_benign[1], train_adversarial[0], train_adversarial[1])
+
+X_test, y_test = unison_shuffled_copies(test_benign[0], test_benign[1], test_adversarial[0], test_adversarial[1])
+
+
+clf = SVC(C=0.7, gamma=0.075)
+clf.fit(X_train, y_train)
+
+# Testing
+x_train_pred = clf.predict(X_train)
+train_acc = len(np.where(x_train_pred == y_train)[0]) / len(X_train)
+
+x_test_pred = clf.predict(X_test)
+test_acc = len(np.where(x_test_pred == y_test)[0]) / len(X_test)
+
+
+
+logger.critical(f"Training acc : {train_acc}")
+logger.critical(f"Test acc : {test_acc}")
+
+
+# Test classwise
+x_train_ben_pred = clf.predict(train_benign[0])
+train_ben_acc = len(np.where(x_train_ben_pred == train_benign[1])[0]) / len(x_train_ben_pred)
+
+x_train_adv_pred = clf.predict(train_adversarial[0])
+train_adv_acc = len(np.where(x_train_adv_pred == train_adversarial[1])[0]) / len(x_train_adv_pred)
+
+
+x_test_ben_pred = clf.predict(test_benign[0])
+test_ben_acc = len(np.where(x_test_ben_pred == test_benign[1])[0]) / len(x_test_ben_pred)
+
+
+x_test_adv_pred = clf.predict(test_adversarial[0])
+test_adv_acc = len(np.where(x_test_adv_pred == test_adversarial[1])[0]) / len(x_test_adv_pred)
+
+logger.critical(f"Training benign acc : {train_ben_acc}")
+logger.critical(f"Training adversarial acc : {train_adv_acc}")
+logger.critical(f"-------------------------------------")
+logger.critical(f"Testing benign acc : {test_ben_acc}")
+logger.critical(f"Testing adversarial acc : {test_adv_acc}")
+
+print("RBF trained...")
+

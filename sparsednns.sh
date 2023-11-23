@@ -3,8 +3,12 @@ CREATE_ROOT=false
 TRAIN_MT_BASELINE=false
 RUN_ATTACK=false
 TEST_ADVERSARIAL=false
-FEATURE_EXTRACTION_BENIGN=true
-FEATURE_EXTRACTION_ADVERSARIAL=true
+FEATURE_EXTRACTION_BENIGN=false
+FEATURE_EXTRACTION_ADVERSARIAL=false
+TRAIN_RBF=true
+
+
+
 #echo $y
 BashName=${0##*/}
 #x=FileName
@@ -15,7 +19,7 @@ home_dir=/home/zsarwar/Projects/SparseDNNs
 # Generic params
 gpu=1
 seed=42
-attack="DeepFool"
+attack="CW"
 
 # Setup the directory for an experiment
 #############################################################################################
@@ -367,7 +371,6 @@ then
 fi
 
 #############################################################################################
-
 # Feature extraction from adversarial samples
 
 if [ "$FEATURE_EXTRACTION_ADVERSARIAL" = true ]
@@ -455,3 +458,24 @@ then
         --attack=$attack
     fi
 fi
+
+
+#############################################################################################
+# Train RBF Kernel
+
+if [ "$TRAIN_RBF" = true ]
+then
+    cd ${home_dir}
+    python3 rbf.py \
+    --gpu=$gpu \
+    --base_dir=$base_dir \
+    --root_hash_config=$root_hash_config \
+    --mt_hash_config=$mt_hash_config \
+    --seed=$seed \
+    --attack=$attack \
+    --trainer_type=$trainer_type
+
+fi
+
+
+
