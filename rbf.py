@@ -10,8 +10,16 @@ parser.add_argument('--gpu', type=int)
 parser.add_argument('--total_attack_samples', type=int)
 parser.add_argument('--attack', type=str)
 parser.add_argument('--trainer_type', type=str)
+parser.add_argument('--integrated', type=str)
+
 
 args = parser.parse_args()
+
+
+if args.integrated == "True":
+    args.integrated = True
+else:
+    args.integrated = False
 
 os.environ["CUDA_VISIBLE_DEVICES"]=str(args.gpu)
 
@@ -59,8 +67,6 @@ def load_data(path, label):
     y.fill(label)
     return [features_matrix, y]
 
-
-
 def unison_shuffled_copies(x_ben, y_ben, x_adv, y_adv):
     X = np.concatenate((x_ben, x_adv), axis=0)
     y = np.concatenate((y_ben, y_adv), axis=0)
@@ -69,14 +75,12 @@ def unison_shuffled_copies(x_ben, y_ben, x_adv, y_adv):
     return X[p], y[p]
 
 
-
-
-def get_paths(base_path, attack_type):
+def get_paths(base_path):
     relu_dir = "ReLUs"
-    train_benign = f"ReLUs_{attack_type}_train_benign.pkl"
-    train_adversarial = f"ReLUs_{attack_type}_train_adversarial.pkl"
-    test_benign = f"ReLUs_{attack_type}_test_benign.pkl"
-    test_adversarial = f"ReLUs_{attack_type}_test_adversarial.pkl"
+    train_benign = f"ReLUs_{args.attack}_train_benign_{args.total_attack_samples}_integrated-{args.integrated}.pkl"
+    train_adversarial = f"ReLUs_{args.attack}_train_adversarial_{args.total_attack_samples}_integrated-{args.integrated}.pkl"
+    test_benign = f"ReLUs_{args.attack}_test_benign_{args.total_attack_samples}_integrated-{args.integrated}.pkl"
+    test_adversarial = f"ReLUs_{args.attack}_test_adversarial_{args.total_attack_samples}_integrated-{args.integrated}.pkl"
 
     train_benign = os.path.join(base_path, relu_dir, train_benign)
     train_adversarial = os.path.join(base_path, relu_dir,  train_adversarial)
@@ -108,7 +112,7 @@ expr_name = args.trainer_type + "_" + expr_hash.hexdigest()
 expr_dir = os.path.join(mt_root_directory, expr_name)
 
 
-logging_path = os.path.join(expr_dir,"train_val_log.log")
+logging_path = os.path.join(expr_dir,"train_val_rbf.log")
 
 
 logging.basicConfig(filename=logging_path,
@@ -132,15 +136,15 @@ with open(yaml_file, 'w') as yaml_out:
 
 
 base_path = expr_dir
-attack_type = args.attack
-train_benign,train_adversarial,test_benign,test_adversarial = get_paths(base_path, attack_type)
+
+train_benign,train_adversarial,test_benign,test_adversarial = get_paths(base_path)
 
 
 #"--------------------"
 train_benign = load_data(train_benign, 1)
-train_adversarial = load_data(train_adversarial, 0)
+train_adversarial = load_data(train_adversarial, -1)
 test_benign = load_data(test_benign, 1)
-test_adversarial = load_data(test_adversarial, 0)
+test_adversarial = load_data(test_adversarial, -1)
 min_train = min(train_benign[0].shape[0], train_adversarial[0].shape[0])
 min_test = min(test_benign[0].shape[0], test_adversarial[0].shape[0])
 # Subsample the larger sets
@@ -194,6 +198,15 @@ logger.critical(f"Training adversarial acc : {train_adv_acc}")
 logger.critical(f"-------------------------------------")
 logger.critical(f"Testing benign acc : {test_ben_acc}")
 logger.critical(f"Testing adversarial acc : {test_adv_acc}")
+
+
+# Save rbf model
+rbf_config = f"RBF_{args.attack}_{args.total_attack_samples}.pkl" 
+rbf_path = os.path.join(expr_dir, "RBF", rbf_config)
+
+with open(rbf_path,'wb') as f:
+    pickle.dump(clf,f)
+
 
 print("RBF trained...")
 

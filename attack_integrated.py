@@ -22,17 +22,16 @@ parser.add_argument('--trainer_type', type=str)
 parser.add_argument('--gpu', type=str)
 parser.add_argument('--attack_split', type=str)
 parser.add_argument('--total_attack_samples', type=int)
-parser.add_argument('--total_train_samples', type=int)
 parser.add_argument('--integrated', type=str)
 parser.add_argument('--seed', type=int, help="seed for pandas sampling")
 
 args = parser.parse_args()
 
-
 if args.integrated == "True":
     args.integrated = True
 else:
     args.integrated = False
+
 
 
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
@@ -46,20 +45,13 @@ from utils import configs
 import hashlib
 sys.path.append("/home/zsarwar/Projects/SparseDNNs/adversarial-attacks-pytorch")
 import torchattacks
-
+from torchattacks.attacks.cw_integrated import CW_RBF
 from utils.utils_2 import imshow, get_pred
 import matplotlib.pyplot as plt
 import pickle
 from torch.utils.data import DataLoader, Subset
 import numpy as np
 from utils.rbf_model import RBF_SVM
-
-if args.integrated:
-    from torchattacks.attacks.cw_integrated import CW_RBF as CW
-else:
-    from torchattacks import CW, DeepFool
-
-
 np.random.seed(args.seed)
 
 print("Starting attack...")
@@ -92,7 +84,7 @@ elif args.attack_split == 'test':
     random_indices = np.random.randint(low=0, high = len(testset), size=(args.total_attack_samples))
     testset = Subset(testset, indices=random_indices)
     dataloader = DataLoader(testset, batch_size=args.batch_size,
-                                                shuffle=True, num_workers=args.workers)
+                                                shuffle=False, num_workers=args.workers)
    
 
 if args.model == 'resnet18':
@@ -125,19 +117,15 @@ ckpt_path = os.path.join(expr_dir, ckpt_config)
 checkpoint = torch.load(ckpt_path, map_location=loc)
 model.load_state_dict(checkpoint['state_dict'])
 
+# Load RBF model
+rbf_config = f"RBF_{args.attack}_{args.total_attack_samples}.pkl" 
+rbf_path = os.path.join(expr_dir, "RBF", rbf_config)
 
-
-if args.integrated:
-    # Load RBF model
-    rbf_config = f"RBF_{args.attack}_{args.total_train_samples}.pkl" 
-    rbf_path = os.path.join(expr_dir, "RBF", rbf_config)
-
-    with open(rbf_path,'rb') as in_model:
-        clf = pickle.load(in_model)
-        
-    # Class RBF model
-    rbf_svm = RBF_SVM(clf)
-
+with open(rbf_path,'rb') as in_model:
+    clf = pickle.load(in_model)
+    
+# Class RBF model
+rbf_svm = RBF_SVM(clf)
 
 # Start attack
 mean = (0.4914, 0.4822, 0.4465)
@@ -146,16 +134,11 @@ std = (0.247, 0.243, 0.261)
 all_adv_images = None
 all_labels = None
 
-
-if args.integrated:
-    if args.attack == "CW":
-        atk = CW(model, rbf_svm, c=args.c,  steps=args.steps, lr=args.lr)
-else:     
-    if args.attack == "CW":
-        atk = CW(model, c=args.c,  steps=args.steps, lr=args.lr)
-    elif args.attack == "DeepFool":
-        atk = DeepFool(model, steps=50, overshoot=0.02)
-
+if args.attack == "CW":
+    atk = CW_RBF(model, rbf_svm, c=args.c,  steps=args.steps, lr=args.lr)
+elif args.attack == "DeepFool":
+    #atk = DeepFool(model, steps=50, overshoot=0.02)
+    pass
 atk.set_normalization_used(mean=[0.4914, 0.4822, 0.4465], std=[0.247, 0.243, 0.261])
 
 for images, labels in dataloader:
@@ -168,6 +151,7 @@ for images, labels in dataloader:
         all_labels = torch.concat((all_labels, labels), dim=0)
     else:
         all_labels = labels
+
 
 # Save adversarial images
 image_save_config = f"Adversarial_Datasets/{args.attack}_adv_samples_{args.total_attack_samples}_{args.attack_split}_integrated-{args.integrated}.pickle"

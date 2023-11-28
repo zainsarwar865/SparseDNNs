@@ -35,7 +35,8 @@ from utils.transforms import get_mixup_cutmix
 from torch.utils.data.dataloader import default_collate
 import utils.utils as utils
 import utils.configs as configs
-#from torchvision.models.feature_extraction import create_feature_extractor
+from torchvision.models.feature_extraction import create_feature_extractor
+from collections import defaultdict
 
 
 model_names = sorted(name for name in models.__dict__
@@ -83,7 +84,6 @@ parser.add_argument('--new_classifier', type=str)
 parser.add_argument('--test_adversarial', type=str)
 parser.add_argument('--attack', type=str)
 parser.add_argument('--attack_split', type=str)
-parser.add_argument('--integrated', type=str)
 parser.add_argument('--total_attack_samples', type=int)
 
 
@@ -113,12 +113,6 @@ if args.test_adversarial == "True":
     args.test_adversarial = True
 else:
     args.test_adversarial = False
-
-
-if args.integrated == "True":
-    args.integrated = True
-else:
-    args.integrated = False
 
 
 # assertions to avoid divide by 0 issue in learning rate
@@ -162,7 +156,7 @@ if not os.path.exists(metrics_dir):
 
 
 # Create log files
-logging_path = os.path.join(expr_dir,"model_test_log.log")
+logging_path = os.path.join(expr_dir,"test_log.log")
 
 
 logging.basicConfig(filename=logging_path,
@@ -204,6 +198,24 @@ def main():
     else:
         # Simply call main_worker function
         main_worker(args.gpu, ngpus_per_node, args)
+
+
+
+# Set up a forward hook
+fc_input_activations = []
+fc_output_activations = []
+
+def fc_hook(module, input, output):
+    fc_input_activations.append(input)
+    fc_output_activations.append(output.detach())
+"""
+def fc_hook(module, input):
+    fc_input_activations.append(input)
+"""
+"""
+def avgpool_hook(module, input, output):
+    fc_input_activations.append(output.detach())
+""" 
 
 def main_worker(gpu, ngpus_per_node, args):
     global best_acc1
@@ -288,6 +300,14 @@ def main_worker(gpu, ngpus_per_node, args):
         device = torch.device("mps")
     else:
         device = torch.device("cpu")
+    
+    
+    
+    
+
+    model.fc.register_forward_hook(fc_hook)
+    #model.avgpool.register_forward_hook(avgpool_hook)
+
     # define loss function (criterion), optimizer, and learning rate scheduler
     criterion = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing).to(device)
 
@@ -321,17 +341,18 @@ def main_worker(gpu, ngpus_per_node, args):
     normalize,   
     ])
 
+    
+
     if args.test_adversarial:
         # Load adversarial dataset
-        #adv_dataset_config = f"Adversarial_Datasets/{args.attack}_adv_samples_{args.total_attack_samples}_{args.attack_split}.pickle"
-        #TODO fix integration
-        adv_dataset_config = f"Adversarial_Datasets/{args.attack}_adv_samples_{args.total_attack_samples}_{args.attack_split}_integrated-{args.integrated}.pickle"
+        adv_dataset_config = f"Adversarial_Datasets/{args.attack}_adv_samples_{args.total_attack_samples}_{args.attack_split}.pickle"
         adv_dataset_path = os.path.join(expr_dir, adv_dataset_config)
 
         with open(adv_dataset_path, 'rb') as adv_set:
             adv_samples = pickle.load(adv_set)
-
+        print("Feature path is ", adv_dataset_path)
         valset = CustomImageDataset_Adv(adv_samples)
+        
     else:
         valset = torchvision.datasets.CIFAR10(root='/bigstor/zsarwar/CIFAR10', train=False,
                                             download=False, transform=transform_test
@@ -365,6 +386,87 @@ def main_worker(gpu, ngpus_per_node, args):
     logger.critical(f"=> loaded checkpoint '{best_ckpt_path}' (epoch {best_epoch})")
     logger.critical(f"Evaluating {args.attack_split}")
     validate(val_loader, model, criterion, args)
+
+
+
+
+        # Extract Relus from the training data of layer X
+    class ResNetFeatureExtractor(torch.nn.Module):
+        def __init__(self, model):
+            super().__init__()
+            # Pretrained resnet model
+            m = model
+            return_nodes = {
+                # node_name: user-specified key for output dict
+                'flatten': 'flatten',
+            }
+            self.body = create_feature_extractor(
+                m, return_nodes= return_nodes)
+        def forward(self, x):
+            x = self.body(x)
+            return x
+     
+    model2 = ResNetFeatureExtractor(model)
+    extract_features(val_loader, model2, args)
+
+
+
+
+def extract_features(val_loader, model, args):
+    def run_validate(loader, base_progress=0):
+        features = defaultdict(list)
+        with torch.no_grad():
+            end = time.time()
+            for i, (images, target) in enumerate(loader):
+                i = base_progress + i
+                if args.gpu is not None and torch.cuda.is_available():
+                    images = images.cuda(args.gpu, non_blocking=True)
+                if torch.backends.mps.is_available():
+                    images = images.to('mps')
+                    target = target.to('mps')
+                if torch.cuda.is_available():
+                    target = target.cuda(args.gpu, non_blocking=True)
+                # compute output
+                output = model(images)
+                
+                for k in output.keys():
+                    t_k = output[k].cpu()
+                    features[k].append(t_k)
+            relu_dict_path = "/home/zsarwar/Projects/SparseDNNs/features.pickle"
+            with open(relu_dict_path, 'wb') as o_file:
+                pickle.dump(features, o_file)
+            
+    batch_time = AverageMeter('Time', ':6.3f', Summary.NONE)
+    losses = AverageMeter('Loss', ':.4e', Summary.NONE)
+    top1 = AverageMeter('Acc@1', ':6.2f', Summary.AVERAGE)
+    top5 = AverageMeter('Acc@5', ':6.2f', Summary.AVERAGE)
+    progress = ProgressMeter(
+        len(val_loader) + (args.distributed and (len(val_loader.sampler) * args.world_size < len(val_loader.dataset))),
+        [batch_time, losses, top1, top5],
+        prefix='Test: ')
+
+    # switch to evaluate mode
+    model.eval()
+
+    run_validate(val_loader)
+    if args.distributed:
+        top1.all_reduce()
+        top5.all_reduce()
+
+    if args.distributed and (len(val_loader.sampler) * args.world_size < len(val_loader.dataset)):
+        aux_val_dataset = Subset(val_loader.dataset,
+                                 range(len(val_loader.sampler) * args.world_size, len(val_loader.dataset)))
+        aux_val_loader = torch.utils.data.DataLoader(
+            aux_val_dataset, batch_size=args.batch_size, shuffle=False,
+            num_workers=args.workers, pin_memory=True)
+        run_validate(aux_val_loader, len(val_loader))
+    summ_stats = progress.display_summary()
+  
+    return top1.avg
+
+
+
+
 
 
 
@@ -518,3 +620,11 @@ class ProgressMeter(object):
 if __name__ == '__main__':
     main()
     print("Model tested")
+
+    
+    activations = {}
+    activations['inputs'] = fc_input_activations
+    activations['outputs'] = fc_output_activations
+    temp_path = "/home/zsarwar/Projects/SparseDNNs/hooks.pickle"
+    with open(temp_path, 'wb') as out_file:
+        pickle.dump(activations, out_file)

@@ -86,6 +86,8 @@ parser.add_argument('--extract_type', type=str)
 parser.add_argument('--extract_split', type=str)
 parser.add_argument('--total_attack_samples', type=int)
 parser.add_argument('--attack', type=str)
+parser.add_argument('--integrated', type=str)
+
 args = parser.parse_args()
 
 # Handle bash boolean variables
@@ -118,6 +120,10 @@ else:
     args.eval_pretrained = False
 
 
+if args.integrated == "True":
+    args.integrated = True
+else:
+    args.integrated = False
 
 if args.model_ema == "True":
     args.model_ema = True
@@ -157,7 +163,8 @@ relu_folder = "ReLUs"
 relu_dir = os.path.join(expr_dir, relu_folder)
 
 
-relu_dict = f"ReLUs_{args.attack}_{args.extract_split}_{args.extract_type}.pkl"
+
+relu_dict = f"ReLUs_{args.attack}_{args.extract_split}_{args.extract_type}_{args.total_attack_samples}_integrated-{args.integrated}.pkl"
 
 relu_dict_path = os.path.join(relu_dir, relu_dict)
 
@@ -379,8 +386,9 @@ def main_worker(gpu, ngpus_per_node, args):
                                                     download=False, transform=transform_test)
         elif args.extract_type == 'adversarial':
             # Load adversarial dataset
-            adv_dataset_config = f"Adversarial_Datasets/{args.attack}_adv_samples_{args.total_attack_samples}_{args.extract_split}.pickle"
+            adv_dataset_config = f"Adversarial_Datasets/{args.attack}_adv_samples_{args.total_attack_samples}_{args.extract_split}_integrated-{args.integrated}.pickle"
             adv_dataset_path = os.path.join(expr_dir, adv_dataset_config)
+            print("Testing integrated samples")
 
             with open(adv_dataset_path, 'rb') as adv_set:
                 adv_samples = pickle.load(adv_set)
@@ -395,7 +403,7 @@ def main_worker(gpu, ngpus_per_node, args):
                                                 download=False, transform=transform_test)
         elif args.extract_type == 'adversarial':
             # Load adversarial dataset
-            adv_dataset_config = f"Adversarial_Datasets/{args.attack}_adv_samples_{args.total_attack_samples}_{args.extract_split}.pickle"
+            adv_dataset_config = f"Adversarial_Datasets/{args.attack}_adv_samples_{args.total_attack_samples}_{args.extract_split}_integrated-{args.integrated}.pickle"
             adv_dataset_path = os.path.join(expr_dir, adv_dataset_config)
 
             with open(adv_dataset_path, 'rb') as adv_set:
