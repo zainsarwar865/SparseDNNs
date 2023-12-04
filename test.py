@@ -80,7 +80,7 @@ parser.add_argument('--trainer_type', type=str)
 parser.add_argument('--original_dataset', type=str)
 parser.add_argument('--original_config', type=str)
 parser.add_argument('--new_classifier', type=str)
-parser.add_argument('--test_adversarial', type=str)
+parser.add_argument('--test_type', type=str)
 parser.add_argument('--attack', type=str)
 parser.add_argument('--attack_split', type=str)
 parser.add_argument('--integrated', type=str)
@@ -107,12 +107,6 @@ if args.new_classifier == "True":
     args.new_classifier = True
 else:
     args.new_classifier = False
-
-
-if args.test_adversarial == "True":
-    args.test_adversarial = True
-else:
-    args.test_adversarial = False
 
 
 if args.integrated == "True":
@@ -162,8 +156,11 @@ if not os.path.exists(metrics_dir):
 
 
 # Create log files
-logging_path = os.path.join(expr_dir,"model_test_log.log")
 
+if args.integrated:
+    logging_path = os.path.join(expr_dir,f"resnet_integrated_{args.test_type}_test.log")
+else:
+    logging_path = os.path.join(expr_dir,f"resnet_{args.test_type}_test.log")
 
 logging.basicConfig(filename=logging_path,
                     format='%(asctime)s %(message)s',
@@ -179,11 +176,11 @@ logger.setLevel(logging.INFO)
 expr_config_dict = {}
 all_args = args._get_kwargs()
 expr_config_dict = {tup[0]:tup[1] for tup in all_args}
-yaml_file = os.path.join(expr_dir, "Config.yaml")
+yaml_file = os.path.join(expr_dir, "Config_test.yaml")
 with open(yaml_file, 'w') as yaml_out:
     yaml.dump(expr_config_dict, yaml_out)
 
-print("Starting test...")
+print("Testing model...")
 
 def main():
     if args.seed is not None:
@@ -291,40 +288,18 @@ def main_worker(gpu, ngpus_per_node, args):
     # define loss function (criterion), optimizer, and learning rate scheduler
     criterion = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing).to(device)
 
-    
-    optimizer = torch.optim.SGD(model.parameters(), args.lr,
-                                momentum=args.momentum,
-                                weight_decay=args.weight_decay)
-    
-
-    scheduler = CosineAnnealingLR(
-            optimizer, T_max=args.epochs, eta_min=args.lr_min
-        )
-    """
-    warmup_lr_scheduler = LinearLR(
-                optimizer, start_factor=args.lr_warmup_decay, total_iters=args.lr_warmup_epochs
-            )
-    """
-    """
-    scheduler = SequentialLR(
-                optimizer, schedulers=[warmup_lr_scheduler, main_scheduler], milestones=[args.lr_warmup_epochs])
-    """
     random_seed=args.seed
     # GO-GO-GO!
     normalize  =  transforms.Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261))    
-
-
     num_classes = args.num_classes
-
     transform_test = transforms.Compose([
     transforms.ToTensor(),
     normalize,   
     ])
 
-    if args.test_adversarial:
-        # Load adversarial dataset
-        #adv_dataset_config = f"Adversarial_Datasets/{args.attack}_adv_samples_{args.total_attack_samples}_{args.attack_split}.pickle"
-        #TODO fix integration
+    dataset_path = configs.dataset_root_paths[args.original_dataset]
+
+    if args.test_type == 'adversarial':
         adv_dataset_config = f"Adversarial_Datasets/{args.attack}_adv_samples_{args.total_attack_samples}_{args.attack_split}_integrated-{args.integrated}.pickle"
         adv_dataset_path = os.path.join(expr_dir, adv_dataset_config)
 
@@ -332,13 +307,17 @@ def main_worker(gpu, ngpus_per_node, args):
             adv_samples = pickle.load(adv_set)
 
         valset = CustomImageDataset_Adv(adv_samples)
-    else:
-        valset = torchvision.datasets.CIFAR10(root='/bigstor/zsarwar/CIFAR10', train=False,
+    
+    
+    elif args.test_type == 'benign':
+        valset = torchvision.datasets.CIFAR10(root=dataset_path, train=False,
                                             download=False, transform=transform_test
                                             )
-        
+        random_indices = np.random.randint(low=0, high = len(valset), size=(args.total_attack_samples))
+        valset = Subset(valset, indices=random_indices)
+
     val_loader = torch.utils.data.DataLoader(valset, batch_size=args.batch_size,
-                                            shuffle=False, num_workers=args.workers)
+                                            shuffle=True, num_workers=args.workers)
     
     # Test after training
     # Loading the best checkpoint    
@@ -360,13 +339,9 @@ def main_worker(gpu, ngpus_per_node, args):
     # best_acc1 may be from a checkpoint from a different GPU
         best_acc1 = best_acc1.to(args.gpu)
     model.load_state_dict(checkpoint['state_dict'])
-    #optimizer.load_state_dict(checkpoint['optimizer'])
-    scheduler.load_state_dict(checkpoint['scheduler'])
     logger.critical(f"=> loaded checkpoint '{best_ckpt_path}' (epoch {best_epoch})")
     logger.critical(f"Evaluating {args.attack_split}")
     validate(val_loader, model, criterion, args)
-
-
 
 
 def compute_f1_score(preds, targets):
@@ -517,4 +492,4 @@ class ProgressMeter(object):
 
 if __name__ == '__main__':
     main()
-    print("Model tested")
+    print("Model tested...")

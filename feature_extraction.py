@@ -89,7 +89,7 @@ parser.add_argument('--attack', type=str)
 parser.add_argument('--integrated', type=str)
 
 args = parser.parse_args()
-
+print("Starting feature extraction...")
 # Handle bash boolean variables
 if args.pretrained == "True":
     args.pretrained = True
@@ -378,12 +378,17 @@ def main_worker(gpu, ngpus_per_node, args):
     normalize,   
     ])
 
+    dataset_path = configs.dataset_root_paths[args.original_dataset]
+
 
     if args.extract_split == 'train':
 
         if args.extract_type == 'benign':        
-            trainset = torchvision.datasets.CIFAR10(root='/bigstor/zsarwar/CIFAR10', train=True,
+            trainset = torchvision.datasets.CIFAR10(root=dataset_path, train=True,
                                                     download=False, transform=transform_test)
+            random_indices = np.random.randint(low=0, high = len(trainset), size=(args.total_attack_samples))
+            trainset = Subset(trainset, indices=random_indices)
+
         elif args.extract_type == 'adversarial':
             # Load adversarial dataset
             adv_dataset_config = f"Adversarial_Datasets/{args.attack}_adv_samples_{args.total_attack_samples}_{args.extract_split}_integrated-{args.integrated}.pickle"
@@ -399,8 +404,11 @@ def main_worker(gpu, ngpus_per_node, args):
 
     elif args.extract_split == 'test':
         if args.extract_type == 'benign':
-            valset = torchvision.datasets.CIFAR10(root='/bigstor/zsarwar/CIFAR10', train=False,
+            valset = torchvision.datasets.CIFAR10(root=dataset_path, train=False,
                                                 download=False, transform=transform_test)
+            random_indices = np.random.randint(low=0, high = len(valset), size=(args.total_attack_samples))
+            valset = Subset(valset, indices=random_indices)
+
         elif args.extract_type == 'adversarial':
             # Load adversarial dataset
             adv_dataset_config = f"Adversarial_Datasets/{args.attack}_adv_samples_{args.total_attack_samples}_{args.extract_split}_integrated-{args.integrated}.pickle"

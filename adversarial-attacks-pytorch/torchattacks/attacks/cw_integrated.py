@@ -35,9 +35,10 @@ class CW_RBF(Attack):
 
     """
 
-    def __init__(self, model, rbf, c=1, kappa=0, steps=50, lr=0.01):
+    def __init__(self, model, rbf, c=1, d=0.001,kappa=0, steps=50, lr=0.01):
         super().__init__("CW", model)
         self.c = c
+        self.d = d
         self.kappa = kappa
         self.steps = steps
         self.lr = lr
@@ -62,17 +63,18 @@ class CW_RBF(Attack):
 
         best_adv_images = images.clone().detach()
         best_L2 = 1e10 * torch.ones((len(images))).to(self.device)
+        target_scores = torch.ones((len(images))).to(self.device).double()
         prev_cost = 1e10
         dim = len(images.shape)
 
         MSELoss = nn.MSELoss(reduction="none")
-        
+        MSELoss_svm = nn.MSELoss(reduction="none")
         Flatten = nn.Flatten()
 
         optimizer = optim.Adam([w], lr=self.lr)
 
         for step in range(self.steps):
-            #print("On step : ", step)
+            print("On step : ", step)
             # Get adversarial images
             adv_images = self.tanh_space(w)
 
@@ -81,17 +83,27 @@ class CW_RBF(Attack):
             L2_loss = current_L2.sum()
 
             outputs = self.get_logits(adv_images)
-
-            # rbf outputs
-            rbf_loss = -self.rbf(self.fc_activations[0]).sum()
+            # rbf loss
+            rbf_preds = self.rbf(self.fc_activations[0])
+            rbf_loss = MSELoss_svm(rbf_preds, target_scores).sum()
 
             if self.targeted:
                 f_loss = self.f(outputs, target_labels).sum()
             else:
                 f_loss = self.f(outputs, labels).sum()
 
-            cost = L2_loss + self.c * f_loss + 0.0001*rbf_loss
+            cost_og = L2_loss + self.c * f_loss
+            #cost = L2_loss + self.c * f_loss + 0.001*rbf_loss - best setting so far
+            cost = L2_loss + self.c * f_loss + self.d*rbf_loss
             #cost = L2_loss + self.c * f_loss
+            print("L2_loss: ",  L2_loss.item())
+            print("rbf_loss: ",  rbf_loss.item())
+            print("f_loss: ",  f_loss.item())
+            print("--------------------")
+            print("cost: ",  cost.item())
+            print("cost_og: ",  cost_og.item())
+            print("--------------------")
+
             optimizer.zero_grad()
             cost.backward()
             optimizer.step()
@@ -116,9 +128,10 @@ class CW_RBF(Attack):
             # max(.,1) To prevent MODULO BY ZERO error in the next step.
             if step % max(self.steps // 10, 1) == 0:
                 if cost.item() > prev_cost:
+                    best_adv_images = best_adv_images.detach().cpu()
                     return best_adv_images
                 prev_cost = cost.item()
-
+        best_adv_images = best_adv_images.detach().cpu()
         return best_adv_images
 
     def tanh_space(self, x):

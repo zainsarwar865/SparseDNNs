@@ -77,6 +77,7 @@ class CW(Attack):
             # Calculate loss
             current_L2 = MSELoss(Flatten(adv_images), Flatten(images)).sum(dim=1)
             L2_loss = current_L2.sum()
+        
 
             outputs = self.get_logits(adv_images)
             if self.targeted:
@@ -85,6 +86,12 @@ class CW(Attack):
                 f_loss = self.f(outputs, labels).sum()
 
             cost = L2_loss + self.c * f_loss
+
+            print("L2_loss: ",  L2_loss.item())
+            print("f_loss: ",  f_loss.item())
+            print("--------------------")
+            print("cost: ",  cost.item())
+            print("--------------------")
 
             optimizer.zero_grad()
             cost.backward()
@@ -110,9 +117,11 @@ class CW(Attack):
             # max(.,1) To prevent MODULO BY ZERO error in the next step.
             if step % max(self.steps // 10, 1) == 0:
                 if cost.item() > prev_cost:
+                    best_adv_images = best_adv_images.detach().cpu()
                     return best_adv_images
                 prev_cost = cost.item()
 
+        best_adv_images = best_adv_images.detach().cpu()
         return best_adv_images
 
     def tanh_space(self, x):

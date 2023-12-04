@@ -13,6 +13,7 @@ parser.add_argument('--batch_size', type=int)
 parser.add_argument('--model', type=str)
 parser.add_argument('--lr', dest='lr', type=float)
 parser.add_argument('--c', type=float)
+parser.add_argument('--d', type=float)
 parser.add_argument('--steps',  type=int)
 parser.add_argument('--attack',  type=str)
 parser.add_argument('--momentum', default=0.9, type=float, metavar='M')
@@ -24,10 +25,12 @@ parser.add_argument('--attack_split', type=str)
 parser.add_argument('--total_attack_samples', type=int)
 parser.add_argument('--total_train_samples', type=int)
 parser.add_argument('--integrated', type=str)
+parser.add_argument('--print_freq', default=10, type=int)
 parser.add_argument('--seed', type=int, help="seed for pandas sampling")
 
 args = parser.parse_args()
 
+args.distributed = False
 
 if args.integrated == "True":
     args.integrated = True
@@ -44,6 +47,7 @@ import torchvision.transforms as transforms
 from torchvision.models import resnet18
 from utils import configs
 import hashlib
+import logging
 sys.path.append("/home/zsarwar/Projects/SparseDNNs/adversarial-attacks-pytorch")
 import torchattacks
 
@@ -53,13 +57,22 @@ import pickle
 from torch.utils.data import DataLoader, Subset
 import numpy as np
 from utils.rbf_model import RBF_SVM
+import time
+import utils.utils as utils
+from enum import Enum
+import random
+import torch.backends.cudnn as cudnn
 
 if args.integrated:
     from torchattacks.attacks.cw_integrated import CW_RBF as CW
 else:
     from torchattacks import CW, DeepFool
 
-
+# Set seeds
+random.seed(args.seed)
+torch.manual_seed(args.seed)
+cudnn.deterministic = True
+cudnn.benchmark = False
 np.random.seed(args.seed)
 
 print("Starting attack...")
@@ -125,7 +138,7 @@ ckpt_path = os.path.join(expr_dir, ckpt_config)
 checkpoint = torch.load(ckpt_path, map_location=loc)
 model.load_state_dict(checkpoint['state_dict'])
 
-
+model = model.to(device)
 
 if args.integrated:
     # Load RBF model
@@ -137,7 +150,7 @@ if args.integrated:
         
     # Class RBF model
     rbf_svm = RBF_SVM(clf)
-
+    rbf_svm = rbf_svm.to(device)
 
 # Start attack
 mean = (0.4914, 0.4822, 0.4465)
@@ -149,7 +162,7 @@ all_labels = None
 
 if args.integrated:
     if args.attack == "CW":
-        atk = CW(model, rbf_svm, c=args.c,  steps=args.steps, lr=args.lr)
+        atk = CW(model, rbf_svm, c=args.c, d=args.d,  steps=args.steps, lr=args.lr)
 else:     
     if args.attack == "CW":
         atk = CW(model, c=args.c,  steps=args.steps, lr=args.lr)
@@ -178,4 +191,12 @@ adv_dataset = [all_adv_images, all_labels]
 with open(image_save_path, 'wb') as out_dataset:
     pickle.dump(adv_dataset, out_dataset)
 
+    
+
 print("Attack completed...")
+
+
+
+
+
+

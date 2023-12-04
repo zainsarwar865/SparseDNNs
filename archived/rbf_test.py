@@ -99,17 +99,14 @@ logging.basicConfig(filename=logging_path,
                     filemode='w')
  
 # Creating an object
-logger = logging.getLogger()
- 
+logger = logging.getLogger() 
 # Setting the threshold of logger to DEBUG
 logger.setLevel(logging.INFO)
-
-test_path = get_paths(expr_dir)
-
+#test_path = get_paths(expr_dir)
+_,__,___,test_adversarial = get_paths(expr_dir)
 # Label
-test_data = load_data(test_path, -1)
+test_data = load_data(test_adversarial, -1)
 X, y = unison_shuffled_copies(test_data[0], test_data[1])
-
 # Loading svm
 rbf_config = f"RBF_{args.attack}_{args.total_train_samples}.pkl" 
 rbf_path = os.path.join(expr_dir, "RBF", rbf_config)

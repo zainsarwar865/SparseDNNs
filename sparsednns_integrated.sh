@@ -8,10 +8,10 @@ TRAIN_RBF=false
 
 
 
-RUN_ATTACK_INTEGRATED=false
+RUN_ATTACK_INTEGRATED=true
 TEST_INTEGRATED_ADVERSARIAL=false
 FEATURE_EXTRACTION_INTEGRATED_ADVERSARIAL=false
-TEST_ATTACK_INTEGRATED=true
+TEST_ATTACK_INTEGRATED=false
 
 
 #echo $y
@@ -121,6 +121,7 @@ then
     --trainer_type=$trainer_type
 fi
 
+
 #############################################################################################
 # Attack parameters
 
@@ -136,8 +137,6 @@ batch_size=512
 total_attack_samples_train=5120
 attack_split='train'
 integrated=False
-
-total_attack_samples_test=5120
 
 if [ "$RUN_ATTACK" = true ]
 then
@@ -165,9 +164,8 @@ then
         --trainer_type=$trainer_type
     fi
 
-
+total_attack_samples_test=5120
 attack_split='test'
-
 
     if [ "$RUN_ATTACK_TEST" = true ]
     then
@@ -194,18 +192,17 @@ attack_split='test'
     fi
 fi
 
+
+
 #############################################################################################
-# Test adversarial samples
+# Test adversarial samples on the model
 
 TEST_MT_ADVERSARIAL_TRAIN=true
 TEST_MT_ADVERSARIAL_TEST=true
-
 test_adversarial=True
-
 
 if [ "$TEST_ADVERSARIAL" = true ]
 then
-
     attack_split='train'
     if [ "$TEST_MT_ADVERSARIAL_TRAIN" = true ]
     then
@@ -282,9 +279,9 @@ then
     fi
 
 fi
+
 #############################################################################################
 # Feature extraction from benign samples
-
 
 if [ "$FEATURE_EXTRACTION_BENIGN" = true ]
 then
@@ -473,7 +470,7 @@ fi
 
 #############################################################################################
 # Train RBF Kernel
-
+train='True'
 if [ "$TRAIN_RBF" = true ]
 then
     cd ${home_dir}
@@ -486,8 +483,24 @@ then
     --attack=$attack \
     --trainer_type=$trainer_type \
     --integrated=$integrated \
-    --total_attack_samples=$total_attack_samples_test
+    --total_attack_samples=$total_attack_samples_test \
+    --train=$train
 fi
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -503,10 +516,19 @@ fi
 
 
 #############################################################################################
-# Attack parameters
-RUN_ATTACK_INTEGRATED_TRAIN=true
-RUN_ATTACK_INTEGRATED_TEST=false
+# Obtain baseline performance for Resnet and RBF for test samples to attack 
 
+
+
+
+
+
+
+
+
+
+
+#############################################################################################
 # Attack parameters
 
 total_attack_samples=$total_attack_samples_train
@@ -514,158 +536,157 @@ integrated=True
 
 original_dataset=cifar10
 c=0.02
-steps=200
+steps=500
 lr=0.01
-batch_size=256
-total_attack_samples_train=256
-attack_split='train'
+batch_size=512
+total_attack_samples_test=2560
+attack_split='test'
 
-total_attack_samples_test=256
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 if [ "$RUN_ATTACK_INTEGRATED" = true ]
 then
-    if [ "$RUN_ATTACK_INTEGRATED_TRAIN" = true ]
-    then
-        cd ${home_dir}
-        python3 attack.py \
-        --gpu=$gpu \
-        --base_dir=$base_dir \
-        --root_hash_config=$root_hash_config \
-        --mt_hash_config=$mt_hash_config \
-        --original_dataset=$original_dataset \
-        --model=$model \
-        --batch_size=$batch_size \
-        --lr=$lr \
-        --c=$c \
-        --steps=$steps \
-        --seed=$seed \
-        --attack=$attack \
-        --attack_split=$attack_split \
-        --total_attack_samples=$total_attack_samples_train \
-        --num_classes=$num_classes \
-        --integrated=$integrated \
-        --total_train_samples=$total_attack_samples \
-        --trainer_type=$trainer_type
-    fi
-
+    cd ${home_dir}
+    python3 attack.py \
+    --gpu=$gpu \
+    --base_dir=$base_dir \
+    --root_hash_config=$root_hash_config \
+    --mt_hash_config=$mt_hash_config \
+    --original_dataset=$original_dataset \
+    --model=$model \
+    --batch_size=$batch_size \
+    --lr=$lr \
+    --c=$c \
+    --steps=$steps \
+    --seed=$seed \
+    --attack=$attack \
+    --attack_split=$attack_split \
+    --total_attack_samples=$total_attack_samples_test \
+    --num_classes=$num_classes \
+    --integrated=$integrated \
+    --total_train_samples=$total_attack_samples \
+    --trainer_type=$trainer_type
 
 fi
-
-# TODO
-# DO TEST SPLIT HERE
 
 
 #############################################################################################
 # Test adversarial samples
-
-TEST_INTEGRATED_ADVERSARIAL_TRAIN=true
-TEST_INTEGRATED_ADVERSARIAL_TEST=false
 test_adversarial=True
-
 if [ "$TEST_INTEGRATED_ADVERSARIAL" = true ]
 then
-
-    attack_split='train'
-    if [ "$TEST_INTEGRATED_ADVERSARIAL_TRAIN" = true ]
-    then
-        cd ${home_dir}
-        python3 test.py \
-        --gpu=$gpu \
-        --base_dir=$base_dir \
-        --root_hash_config=$root_hash_config \
-        --mt_hash_config=$mt_hash_config \
-        --epochs=$epochs \
-        --num_eval_epochs=$num_eval_epochs \
-        --arch=$model \
-        --batch_size=$batch_size \
-        --lr=$lr \
-        --weight_decay=$weight_decay \
-        --lr_warmup_epochs=$lr_warmup_epochs \
-        --lr_warmup_decay=$lr_warmup_decay \
-        --label_smoothing=$label_smoothing \
-        --mixup_alpha=$mixup_alpha \
-        --cutmix_alpha=$cutmix_alpha \
-        --random_erasing=$random_erasing \
-        --model_ema=False \
-        --pretrained=$pretrained \
-        --freeze_layers=$freeze_layers \
-        --seed=$seed \
-        --num_classes=$num_classes \
-        --original_dataset=$original_dataset \
-        --original_config=$original_config \
-        --trainer_type=$trainer_type \
-        --new_classifier=$new_classifier \
-        --test_adversarial=$test_adversarial \
-        --attack_split=$attack_split \
-        --total_attack_samples=$total_attack_samples_train \
-        --integrated=$integrated \
-        --attack=$attack
-
-    fi
-
- 
+    attack_split='test'
+    cd ${home_dir}
+    python3 test.py \
+    --gpu=$gpu \
+    --base_dir=$base_dir \
+    --root_hash_config=$root_hash_config \
+    --mt_hash_config=$mt_hash_config \
+    --epochs=$epochs \
+    --num_eval_epochs=$num_eval_epochs \
+    --arch=$model \
+    --batch_size=$batch_size \
+    --lr=$lr \
+    --weight_decay=$weight_decay \
+    --lr_warmup_epochs=$lr_warmup_epochs \
+    --lr_warmup_decay=$lr_warmup_decay \
+    --label_smoothing=$label_smoothing \
+    --mixup_alpha=$mixup_alpha \
+    --cutmix_alpha=$cutmix_alpha \
+    --random_erasing=$random_erasing \
+    --model_ema=False \
+    --pretrained=$pretrained \
+    --freeze_layers=$freeze_layers \
+    --seed=$seed \
+    --num_classes=$num_classes \
+    --original_dataset=$original_dataset \
+    --original_config=$original_config \
+    --trainer_type=$trainer_type \
+    --new_classifier=$new_classifier \
+    --test_adversarial=$test_adversarial \
+    --attack_split=$attack_split \
+    --total_attack_samples=$total_attack_samples_test \
+    --integrated=$integrated \
+    --attack=$attack
 fi
 #############################################################################################
 
 
 #############################################################################################
 # Feature extraction from adversarial samples
-FEATURE_EXTRACTION_INTEGRATED_ADVERSARIAL_TRAIN=true
-FEATURE_EXTRACTION_INTEGRATED_ADVERSARIAL_TEST=false
 extract_type=adversarial
-extract_split=train
+extract_split=test
 
 if [ "$FEATURE_EXTRACTION_INTEGRATED_ADVERSARIAL" = true ]
 then
-
-
-   
-    if [ "$FEATURE_EXTRACTION_INTEGRATED_ADVERSARIAL_TRAIN" = true ]
-    then
-        cd ${home_dir}
-        python3 feature_extraction.py \
-        --gpu=$gpu \
-        --base_dir=$base_dir \
-        --root_hash_config=$root_hash_config \
-        --mt_hash_config=$mt_hash_config \
-        --epochs=$epochs \
-        --num_eval_epochs=$num_eval_epochs \
-        --arch=$model \
-        --batch_size=$batch_size \
-        --lr=$lr \
-        --weight_decay=$weight_decay \
-        --lr_warmup_epochs=$lr_warmup_epochs \
-        --lr_warmup_decay=$lr_warmup_decay \
-        --label_smoothing=$label_smoothing \
-        --mixup_alpha=$mixup_alpha \
-        --cutmix_alpha=$cutmix_alpha \
-        --random_erasing=$random_erasing \
-        --model_ema=False \
-        --resume=$resume \
-        --pretrained=$pretrained \
-        --freeze_layers=$freeze_layers \
-        --seed=$seed \
-        --num_classes=$num_classes \
-        --new_classifier=$new_classifier \
-        --test_per_class=$test_per_class \
-        --original_dataset=$original_dataset \
-        --original_config=$original_config \
-        --trainer_type=$trainer_type \
-        --extract_type=$extract_type \
-        --extract_split=$extract_split \
-        --total_attack_samples=$total_attack_samples_train \
-        --integrated=$integrated \
-        --attack=$attack
-    fi
+    cd ${home_dir}
+    python3 feature_extraction.py \
+    --gpu=$gpu \
+    --base_dir=$base_dir \
+    --root_hash_config=$root_hash_config \
+    --mt_hash_config=$mt_hash_config \
+    --epochs=$epochs \
+    --num_eval_epochs=$num_eval_epochs \
+    --arch=$model \
+    --batch_size=$batch_size \
+    --lr=$lr \
+    --weight_decay=$weight_decay \
+    --lr_warmup_epochs=$lr_warmup_epochs \
+    --lr_warmup_decay=$lr_warmup_decay \
+    --label_smoothing=$label_smoothing \
+    --mixup_alpha=$mixup_alpha \
+    --cutmix_alpha=$cutmix_alpha \
+    --random_erasing=$random_erasing \
+    --model_ema=False \
+    --resume=$resume \
+    --pretrained=$pretrained \
+    --freeze_layers=$freeze_layers \
+    --seed=$seed \
+    --num_classes=$num_classes \
+    --new_classifier=$new_classifier \
+    --test_per_class=$test_per_class \
+    --original_dataset=$original_dataset \
+    --original_config=$original_config \
+    --trainer_type=$trainer_type \
+    --extract_type=$extract_type \
+    --extract_split=$extract_split \
+    --total_attack_samples=$total_attack_samples_test \
+    --integrated=$integrated \
+    --attack=$attack
 fi
-
 
 #############################################################################################
 # Test RBF Kernel
+train='False'
+
 if [ "$TEST_ATTACK_INTEGRATED" = true ]
 then
     cd ${home_dir}
-    python3 rbf_test.py \
+    python3 rbf.py \
     --gpu=$gpu \
     --base_dir=$base_dir \
     --root_hash_config=$root_hash_config \
@@ -674,7 +695,8 @@ then
     --attack=$attack \
     --attack_split=$extract_split \
     --trainer_type=$trainer_type \
-    --total_attack_samples=$total_attack_samples_train \
-    --total_train_samples=$total_attack_samples
+    --total_attack_samples=$total_attack_samples_test \
+    --total_train_samples=$total_attack_samples \
+    --train=$train
 fi
 #############################################################################################
