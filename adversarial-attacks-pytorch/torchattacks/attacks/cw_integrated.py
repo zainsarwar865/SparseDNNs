@@ -53,7 +53,6 @@ class CW_RBF(Attack):
 
         images = images.clone().detach().to(self.device)
         labels = labels.clone().detach().to(self.device)
-
         if self.targeted:
             target_labels = self.get_target_label(images, labels)
 
@@ -85,7 +84,10 @@ class CW_RBF(Attack):
             outputs = self.get_logits(adv_images)
             # rbf loss
             rbf_preds = self.rbf(self.fc_activations[0])
-            rbf_loss = MSELoss_svm(rbf_preds, target_scores).sum()
+            red_indices = torch.where(rbf_preds >= 0)[0]
+            rbf_loss = MSELoss_svm(rbf_preds, target_scores)
+            rbf_loss[red_indices] = 0
+            rbf_loss = rbf_loss.sum()
 
             if self.targeted:
                 f_loss = self.f(outputs, target_labels).sum()
@@ -129,10 +131,12 @@ class CW_RBF(Attack):
             if step % max(self.steps // 10, 1) == 0:
                 if cost.item() > prev_cost:
                     best_adv_images = best_adv_images.detach().cpu()
-                    return best_adv_images
+                    
+                    return best_adv_images, images.cpu()
                 prev_cost = cost.item()
         best_adv_images = best_adv_images.detach().cpu()
-        return best_adv_images
+        
+        return best_adv_images, images.cpu()
 
     def tanh_space(self, x):
         return 1 / 2 * (torch.tanh(x) + 1)

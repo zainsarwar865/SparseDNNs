@@ -15,6 +15,7 @@ mt_root_directory = os.path.join(args.base_dir, mt_config)
 mt_baseline_dir = "MT_Baseline"
 datasets_dir = "Datasets"
 attack_dir = "Adversarial_Datasets"
+benign_dir = "Benign_Datasets"
 metrics_dir = "Metrics"
 
 # Create root
@@ -30,5 +31,10 @@ if not os.path.exists(datasets_path):
 attack_path = os.path.join(mt_root_directory, attack_dir)
 if not os.path.exists(attack_path):
     os.makedirs(attack_path)
+
+benign_path = os.path.join(mt_root_directory, benign_dir)
+if not os.path.exists(benign_path):
+    os.makedirs(benign_path)
+
 
 print("Created root directory")

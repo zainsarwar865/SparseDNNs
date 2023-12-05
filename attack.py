@@ -157,6 +157,7 @@ mean = (0.4914, 0.4822, 0.4465)
 std = (0.247, 0.243, 0.261)
 
 all_adv_images = None
+all_og_images = None
 all_labels = None
 
 
@@ -172,11 +173,13 @@ else:
 atk.set_normalization_used(mean=[0.4914, 0.4822, 0.4465], std=[0.247, 0.243, 0.261])
 
 for images, labels in dataloader:
-    adv_images = atk(images, labels)
+    adv_images, og_images = atk(images, labels)
     if isinstance(all_adv_images, torch.Tensor):
         all_adv_images = torch.concat((all_adv_images, adv_images), dim=0)
+        all_og_images = torch.concat((all_og_images, og_images), dim=0)
     else:
         all_adv_images = adv_images
+        all_og_images = og_images
     if isinstance(all_labels, torch.Tensor):
         all_labels = torch.concat((all_labels, labels), dim=0)
     else:
@@ -187,10 +190,15 @@ image_save_config = f"Adversarial_Datasets/{args.attack}_adv_samples_{args.total
 image_save_path  = os.path.join(expr_dir, image_save_config)
 
 adv_dataset = [all_adv_images, all_labels]
-
+ben_dataset = [all_og_images, all_labels]
 with open(image_save_path, 'wb') as out_dataset:
     pickle.dump(adv_dataset, out_dataset)
 
+image_save_config = f"Benign_Datasets/{args.attack}_benign_samples_{args.total_attack_samples}_{args.attack_split}_integrated-{args.integrated}.pickle"
+image_save_path  = os.path.join(expr_dir, image_save_config)
+
+with open(image_save_path, 'wb') as out_dataset:
+    pickle.dump(ben_dataset, out_dataset)
     
 
 print("Attack completed...")

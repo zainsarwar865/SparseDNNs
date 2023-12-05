@@ -504,8 +504,7 @@ c=0.02
 steps=500
 lr=0.01
 batch_size=512
-total_attack_samples_test=2560
-
+total_attack_samples_test=5120
 
 #############################################################################################
 # Get baseline performance of samples to be attacked
