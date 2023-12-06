@@ -1,15 +1,14 @@
 CREATE_ROOT=false
 TRAIN_MT_BASELINE=false
-RUN_ATTACK=false
-TEST_ADVERSARIAL=false
-FEATURE_EXTRACTION_BENIGN=false
-FEATURE_EXTRACTION_ADVERSARIAL=false
-TRAIN_RBF=false
+RUN_ATTACK=true
+TEST_ADVERSARIAL=true
+FEATURE_EXTRACTION_BENIGN=true
+FEATURE_EXTRACTION_ADVERSARIAL=true
+TRAIN_RBF=true
 
 TEST_MT_INTEGRATED_PREATTACK=false
 RUN_ATTACK_INTEGRATED=true
 TEST_INTEGRATED_ADVERSARIAL=true
-
 
 #echo $y
 BashName=${0##*/}
@@ -22,6 +21,7 @@ home_dir=/home/zsarwar/Projects/SparseDNNs
 gpu=1
 seed=42
 attack="CW"
+detector_type="Regular" # Regular
 
 # Setup the directory for an experiment
 #############################################################################################
@@ -37,7 +37,7 @@ root_hash_config="MT_${mt_dataset}_${mt_config}_${mt_classes}"
 if [ "$CREATE_ROOT" = true ]
 then
     cd ${home_dir}
-    python3 create_directories.py \
+    python3 utils/create_directories.py \
     --base_dir=$base_dir \
     --root_hash_config=$root_hash_config \
     
@@ -69,7 +69,7 @@ cutmix_alpha=0.2
 random_erasing=0.1
 model_ema=False
 epochs=1000
-num_eval_epochs=1
+num_eval_epochs=10
 resume=''
 pretrained=False
 freeze_layers=False
@@ -81,7 +81,7 @@ external_augmentation=False
 test_per_class=True
 original_dataset=$mt_dataset
 original_config=$mt_config
-model='resnet18'
+model='wideresnet'
 trainer_type="MT_Baseline"
 mt_hash_config="${trainer_type}_${original_dataset}_${original_config}_${model}_pretrained-${pretrained}_freeze-layers-${freeze_layers}_lr-${lr}_batch_size-${batch_size}_lr-warmup-epochs-${lr_warmup_epochs}_lr-warmup-decay-${lr_warmup_decay}_label-smoothing-${label_smoothing}_mixup-alpha-${mixum_alpha}_cutmix_alpha-${cutmix_alpha}_random-erasing-${random_erasing}_model-ema-${model_ema}_weight_decay-${weight_decay}_epochs-${epochs}_eval-pretrained-${eval_pretrained}_seed-{$seed}"
 
@@ -118,7 +118,6 @@ then
     --trainer_type=$trainer_type
 fi
 
-
 #############################################################################################
 # Attack parameters
 
@@ -135,8 +134,6 @@ total_attack_samples_train=5120
 total_attack_samples_test=5120
 attack_split='train'
 integrated=False
-
-
 
 if [ "$RUN_ATTACK" = true ]
 then
@@ -158,6 +155,7 @@ then
         --seed=$seed \
         --attack=$attack \
         --attack_split=$attack_split \
+        --detector_type=$detector_type \
         --total_attack_samples=$total_attack_samples_train \
         --num_classes=$num_classes \
         --integrated=$integrated \
@@ -185,6 +183,7 @@ then
         --seed=$seed \
         --attack=$attack \
         --attack_split=$attack_split \
+        --detector_type=$detector_type \
         --total_attack_samples=$total_attack_samples_test \
         --num_classes=$num_classes \
         --integrated=$integrated \
@@ -199,7 +198,7 @@ fi
 
 TEST_MT_ADVERSARIAL_TRAIN=true
 TEST_MT_ADVERSARIAL_TEST=true
-test_type=benign
+test_type=adversarial
 if [ "$TEST_ADVERSARIAL" = true ]
 then
     attack_split='train'
@@ -234,6 +233,7 @@ then
         --new_classifier=$new_classifier \
         --test_type=$test_type \
         --attack_split=$attack_split \
+        --detector_type=$detector_type \
         --total_attack_samples=$total_attack_samples_train \
         --integrated=$integrated \
         --attack=$attack
@@ -272,6 +272,7 @@ then
         --new_classifier=$new_classifier \
         --test_type=$test_type \
         --attack_split=$attack_split \
+        --detector_type=$detector_type \
         --total_attack_samples=$total_attack_samples_test \
         --integrated=$integrated \
         --attack=$attack
@@ -323,6 +324,7 @@ then
         --trainer_type=$trainer_type \
         --extract_type=$extract_type \
         --extract_split=$extract_split \
+        --detector_type=$detector_type \
         --total_attack_samples=$total_attack_samples_train \
         --integrated=$integrated \
         --attack=$attack
@@ -365,6 +367,7 @@ then
         --trainer_type=$trainer_type \
         --extract_type=$extract_type \
         --extract_split=$extract_split \
+        --detector_type=$detector_type \
         --total_attack_samples=$total_attack_samples_test \
         --integrated=$integrated \
         --attack=$attack
@@ -419,6 +422,7 @@ then
         --trainer_type=$trainer_type \
         --extract_type=$extract_type \
         --extract_split=$extract_split \
+        --detector_type=$detector_type \
         --total_attack_samples=$total_attack_samples_train \
         --integrated=$integrated \
         --attack=$attack
@@ -459,6 +463,7 @@ then
         --trainer_type=$trainer_type \
         --extract_type=$extract_type \
         --extract_split=$extract_split \
+        --detector_type=$detector_type \
         --total_attack_samples=$total_attack_samples_test \
         --integrated=$integrated \
         --attack=$attack
@@ -481,9 +486,15 @@ then
     --attack=$attack \
     --trainer_type=$trainer_type \
     --integrated=$integrated \
+    --detector_type=$detector_type \
     --total_attack_samples=$total_attack_samples_test \
+    --total_train_samples=$total_attack_samples_train \
     --train=$train
 fi
+
+
+
+
 
 
 
@@ -491,20 +502,17 @@ fi
 #############################################################################################
 # Start integrated attack
 
-
-
-
-
 #############################################################################################
 # Attack parameters
 
-
 original_dataset=cifar10
 c=0.02
+d=0.09
 steps=500
 lr=0.01
 batch_size=512
 total_attack_samples_test=5120
+
 
 #############################################################################################
 # Get baseline performance of samples to be attacked
@@ -546,6 +554,7 @@ train=False
         --new_classifier=$new_classifier \
         --test_type=$test_type \
         --attack_split=$attack_split \
+        --detector_type=$detector_type \
         --total_attack_samples=$total_attack_samples_test \
         --integrated=$integrated \
         --attack=$attack
@@ -582,6 +591,7 @@ train=False
         --trainer_type=$trainer_type \
         --extract_type=$extract_type \
         --extract_split=$extract_split \
+        --detector_type=$detector_type \
         --total_attack_samples=$total_attack_samples_test \
         --integrated=$integrated \
         --attack=$attack
@@ -602,6 +612,7 @@ train=False
         --train=$train \
         --test_type=$test_type \
         --integrated=$integrated \
+        --detector_type=$detector_type
 
     fi
 
@@ -615,7 +626,7 @@ train=False
 integrated=True
 test_type=adversarial
 extract_type=$test_type
-d=0.001
+
 if [ "$RUN_ATTACK_INTEGRATED" = true ]
 then
     cd ${home_dir}
@@ -634,6 +645,7 @@ then
     --seed=$seed \
     --attack=$attack \
     --attack_split=$attack_split \
+    --detector_type=$detector_type \
     --total_attack_samples=$total_attack_samples_test \
     --num_classes=$num_classes \
     --integrated=$integrated \
@@ -677,6 +689,7 @@ then
     --new_classifier=$new_classifier \
     --test_type=$test_type \
     --attack_split=$attack_split \
+    --detector_type=$detector_type \
     --total_attack_samples=$total_attack_samples_test \
     --integrated=$integrated \
     --attack=$attack
@@ -713,10 +726,10 @@ then
     --trainer_type=$trainer_type \
     --extract_type=$extract_type \
     --extract_split=$extract_split \
+    --detector_type=$detector_type \
     --total_attack_samples=$total_attack_samples_test \
     --integrated=$integrated \
     --attack=$attack
-
 
     # Test RBF
     cd ${home_dir}
@@ -732,7 +745,8 @@ then
     --total_train_samples=$total_attack_samples \
     --train=$train \
     --test_type=$test_type \
-    --integrated=$integrated
+    --integrated=$integrated \
+    --detector_type=$detector_type
 fi
 #############################################################################################
 # THE END

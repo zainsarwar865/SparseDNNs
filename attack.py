@@ -22,6 +22,7 @@ parser.add_argument('--original_dataset', type=str)
 parser.add_argument('--trainer_type', type=str)
 parser.add_argument('--gpu', type=str)
 parser.add_argument('--attack_split', type=str)
+parser.add_argument('--detector_type', type=str)
 parser.add_argument('--total_attack_samples', type=int)
 parser.add_argument('--total_train_samples', type=int)
 parser.add_argument('--integrated', type=str)
@@ -62,6 +63,7 @@ import utils.utils as utils
 from enum import Enum
 import random
 import torch.backends.cudnn as cudnn
+from utils.wide_resnet import WideResNet
 
 if args.integrated:
     from torchattacks.attacks.cw_integrated import CW_RBF as CW
@@ -80,17 +82,13 @@ print("Starting attack...")
 # GO-GO-GO!
 normalize  =  transforms.Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261))
     
-
-# Undo normalization for now
 transformation = transforms.Compose([
     transforms.ToTensor(), 
+    #normalize
     ])
 dataset_path = configs.dataset_root_paths[args.original_dataset]
 
-
-
 if args.attack_split == "train":
-
     trainset = torchvision.datasets.CIFAR10(root=dataset_path, train=True,
                                                 download=False, transform=transformation)
     random_indices = np.random.randint(low=0, high = len(trainset), size=(args.total_attack_samples))
@@ -108,11 +106,25 @@ elif args.attack_split == 'test':
                                                 shuffle=True, num_workers=args.workers)
    
 
-if args.model == 'resnet18':
-    model = resnet18()
-    model.fc = nn.Linear(in_features=512, out_features=args.num_classes, bias=True)
 loc = 'cuda:{}'.format(0)
 device = 'cuda:0'
+
+
+if args.model == 'wideresnet':
+    # Load model
+    ###################################################################
+    model = WideResNet()
+    model_path = "/home/zsarwar/Projects/SparseDNNs/adversarial-attacks-pytorch/demo/models/cifar10/L2/Standard.pt"
+    checkpoint = torch.load(model_path, map_location=device)
+    state_dict = checkpoint['state_dict']
+    model.load_state_dict(state_dict)
+    ###################################################################
+
+
+elif args.model == 'resnet18':
+    pass
+    #model = resnet18()
+    #model.fc = nn.Linear(in_features=512, out_features=args.num_classes, bias=True)
 
 # Load best checkpoint
 root_config = args.root_hash_config
@@ -135,14 +147,14 @@ expr_dir = os.path.join(mt_root_directory, expr_name)
 ckpt_config = "Checkpoints/model_best.pth.tar"
 ckpt_path = os.path.join(expr_dir, ckpt_config)
 
-checkpoint = torch.load(ckpt_path, map_location=loc)
-model.load_state_dict(checkpoint['state_dict'])
+#checkpoint = torch.load(ckpt_path, map_location=loc)
+#model.load_state_dict(checkpoint['state_dict'])
 
 model = model.to(device)
 
 if args.integrated:
     # Load RBF model
-    rbf_config = f"RBF_{args.attack}_{args.total_train_samples}.pkl" 
+    rbf_config = f"RBF_{args.attack}_{args.total_train_samples}_{args.detector_type}.pkl"
     rbf_path = os.path.join(expr_dir, "RBF", rbf_config)
 
     with open(rbf_path,'rb') as in_model:
@@ -160,7 +172,6 @@ all_adv_images = None
 all_og_images = None
 all_labels = None
 
-
 if args.integrated:
     if args.attack == "CW":
         atk = CW(model, rbf_svm, c=args.c, d=args.d,  steps=args.steps, lr=args.lr)
@@ -170,7 +181,7 @@ else:
     elif args.attack == "DeepFool":
         atk = DeepFool(model, steps=50, overshoot=0.02)
 
-atk.set_normalization_used(mean=[0.4914, 0.4822, 0.4465], std=[0.247, 0.243, 0.261])
+#atk.set_normalization_used(mean=[0.4914, 0.4822, 0.4465], std=[0.247, 0.243, 0.261])
 
 for images, labels in dataloader:
     adv_images, og_images = atk(images, labels)
@@ -186,7 +197,7 @@ for images, labels in dataloader:
         all_labels = labels
 
 # Save adversarial images
-image_save_config = f"Adversarial_Datasets/{args.attack}_adv_samples_{args.total_attack_samples}_{args.attack_split}_integrated-{args.integrated}.pickle"
+image_save_config = f"Adversarial_Datasets/{args.attack}_adv_samples_{args.total_attack_samples}_{args.attack_split}_detector-type-{args.detector_type}_integrated-{args.integrated}.pickle"
 image_save_path  = os.path.join(expr_dir, image_save_config)
 
 adv_dataset = [all_adv_images, all_labels]
@@ -194,7 +205,7 @@ ben_dataset = [all_og_images, all_labels]
 with open(image_save_path, 'wb') as out_dataset:
     pickle.dump(adv_dataset, out_dataset)
 
-image_save_config = f"Benign_Datasets/{args.attack}_benign_samples_{args.total_attack_samples}_{args.attack_split}_integrated-{args.integrated}.pickle"
+image_save_config = f"Benign_Datasets/{args.attack}_benign_samples_{args.total_attack_samples}_{args.attack_split}_detector-type-{args.detector_type}_integrated-{args.integrated}.pickle"
 image_save_path  = os.path.join(expr_dir, image_save_config)
 
 with open(image_save_path, 'wb') as out_dataset:

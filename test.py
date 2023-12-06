@@ -35,6 +35,7 @@ from utils.transforms import get_mixup_cutmix
 from torch.utils.data.dataloader import default_collate
 import utils.utils as utils
 import utils.configs as configs
+from utils.wide_resnet import WideResNet
 #from torchvision.models.feature_extraction import create_feature_extractor
 
 
@@ -83,6 +84,7 @@ parser.add_argument('--new_classifier', type=str)
 parser.add_argument('--test_type', type=str)
 parser.add_argument('--attack', type=str)
 parser.add_argument('--attack_split', type=str)
+parser.add_argument('--detector_type', type=str)
 parser.add_argument('--integrated', type=str)
 parser.add_argument('--total_attack_samples', type=int)
 
@@ -158,9 +160,9 @@ if not os.path.exists(metrics_dir):
 # Create log files
 
 if args.integrated:
-    logging_path = os.path.join(expr_dir,f"resnet_integrated_{args.test_type}_test.log")
+    logging_path = os.path.join(expr_dir,f"resnet_integrated_{args.test_type}_{args.attack_split}_test.log")
 else:
-    logging_path = os.path.join(expr_dir,f"resnet_{args.test_type}_test.log")
+    logging_path = os.path.join(expr_dir,f"resnet_{args.test_type}_{args.attack_split}_test.log")
 
 logging.basicConfig(filename=logging_path,
                     format='%(asctime)s %(message)s',
@@ -176,7 +178,7 @@ logger.setLevel(logging.INFO)
 expr_config_dict = {}
 all_args = args._get_kwargs()
 expr_config_dict = {tup[0]:tup[1] for tup in all_args}
-yaml_file = os.path.join(expr_dir, "Config_test.yaml")
+yaml_file = os.path.join(expr_dir, f"Config_test_{args.test_type}.yaml")
 with open(yaml_file, 'w') as yaml_out:
     yaml.dump(expr_config_dict, yaml_out)
 
@@ -212,25 +214,46 @@ def main_worker(gpu, ngpus_per_node, args):
     # create model
     if args.pretrained:
         logger.critical(f"=> using pre-trained model {args.arch}")
-        if args.arch == 'resnet18':
+        if args.arch == 'wideresnet':
+            # Load model
+            ###################################################################
+            model = WideResNet()
+            model_path = "/home/zsarwar/Projects/SparseDNNs/adversarial-attacks-pytorch/demo/models/cifar10/L2/Standard.pt"
+            checkpoint = torch.load(model_path, map_location=torch.device('cuda:0'))
+            state_dict = checkpoint['state_dict']
+            model.load_state_dict(state_dict)
+            ###################################################################
+        elif args.arch == 'resnet18':
             model = models.__dict__[args.arch](weights=ResNet18_Weights.IMAGENET1K_V2)
-        if args.arch == 'resnet50':
+        elif args.arch == 'resnet50':
             model = models.__dict__[args.arch](weights=ResNet50_Weights.IMAGENET1K_V2)
         if args.new_classifier:
+            pass
+            """
             if args.arch == 'resnet50':
                model.fc = nn.Linear(in_features=2048, out_features=args.num_classes, bias=True)
             if args.arch == 'resnet18':
                model.fc = nn.Linear(in_features=512, out_features=args.num_classes, bias=True)
+            """
     else:
         logger.critical(f"=> creating model {args.arch}")
-        model = models.__dict__[args.arch]()
-        
+        #model = models.__dict__[args.arch]()
+        # Load model
+        ###################################################################
+        model = WideResNet()
+        model_path = "/home/zsarwar/Projects/SparseDNNs/adversarial-attacks-pytorch/demo/models/cifar10/L2/Standard.pt"
+        checkpoint = torch.load(model_path, map_location=torch.device('cuda:0'))
+        state_dict = checkpoint['state_dict']
+        model.load_state_dict(state_dict)
+        ###################################################################
         if args.new_classifier:
+            pass
+            """
             if args.arch == 'resnet50':
                 model.fc = nn.Linear(in_features=2048, out_features=args.num_classes, bias=True)
             if args.arch == 'resnet18':
                 model.fc = nn.Linear(in_features=512, out_features=args.num_classes, bias=True)
-    
+            """
     
     # Add option to freeze/unfreeze more layers
     # TODO
@@ -294,19 +317,24 @@ def main_worker(gpu, ngpus_per_node, args):
     num_classes = args.num_classes
     transform_test = transforms.Compose([
     transforms.ToTensor(),
-    normalize,   
+    #normalize,   
     ])
+
+    transform_adv = transforms.Compose([
+    #normalize,   
+    ])
+
 
     dataset_path = configs.dataset_root_paths[args.original_dataset]
 
     if args.test_type == 'adversarial':
-        adv_dataset_config = f"Adversarial_Datasets/{args.attack}_adv_samples_{args.total_attack_samples}_{args.attack_split}_integrated-{args.integrated}.pickle"
+        adv_dataset_config = f"Adversarial_Datasets/{args.attack}_adv_samples_{args.total_attack_samples}_{args.attack_split}_detector-type-{args.detector_type}_integrated-{args.integrated}.pickle"
         adv_dataset_path = os.path.join(expr_dir, adv_dataset_config)
-
+        print("Testing dataset ", adv_dataset_path)
         with open(adv_dataset_path, 'rb') as adv_set:
             adv_samples = pickle.load(adv_set)
 
-        valset = CustomImageDataset_Adv(adv_samples)
+        valset = CustomImageDataset_Adv(adv_samples, transform=transform_adv)
     
     
     elif args.test_type == 'benign':
@@ -317,8 +345,9 @@ def main_worker(gpu, ngpus_per_node, args):
         valset = Subset(valset, indices=random_indices)
 
     val_loader = torch.utils.data.DataLoader(valset, batch_size=args.batch_size,
-                                            shuffle=True, num_workers=args.workers)
+                                            shuffle=False, num_workers=args.workers)
     
+    """
     # Test after training
     # Loading the best checkpoint    
     best_ckpt_name = "model_best.pth.tar"
@@ -341,7 +370,9 @@ def main_worker(gpu, ngpus_per_node, args):
     model.load_state_dict(checkpoint['state_dict'])
     logger.critical(f"=> loaded checkpoint '{best_ckpt_path}' (epoch {best_epoch})")
     logger.critical(f"Evaluating {args.attack_split}")
+    """
     validate(val_loader, model, criterion, args)
+
 
 
 def compute_f1_score(preds, targets):
@@ -357,6 +388,7 @@ def validate(val_loader, model, criterion, args):
         with torch.no_grad():
             end = time.time()
             for i, (images, target) in enumerate(loader):
+                #print("test image is ", images[0])
                 i = base_progress + i
                 if args.gpu is not None and torch.cuda.is_available():
                     images = images.cuda(args.gpu, non_blocking=True)
@@ -367,7 +399,7 @@ def validate(val_loader, model, criterion, args):
                     target = target.cuda(args.gpu, non_blocking=True)
 
                 # compute output
-                output = model(images)
+                output, relu_feats = model(images)
                 loss = criterion(output, target)
 
                 # measure accuracy and record loss

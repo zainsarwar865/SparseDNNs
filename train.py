@@ -35,6 +35,7 @@ from utils.transforms import get_mixup_cutmix
 from torch.utils.data.dataloader import default_collate
 import utils.utils as utils
 import utils.configs as configs
+from utils.wide_resnet import WideResNet
 #from torchvision.models.feature_extraction import create_feature_extractor
 
 
@@ -160,7 +161,7 @@ if not os.path.exists(ckpt_dir):
 if not os.path.exists(metrics_dir):
     os.makedirs(metrics_dir)
 
-
+exit()
 # Create log files
 if(args.evaluate):
     logging_path = os.path.join(expr_dir,"test_log.log")
@@ -222,25 +223,43 @@ def main_worker(gpu, ngpus_per_node, args):
     # create model
     if args.pretrained:
         logger.critical(f"=> using pre-trained model {args.arch}")
-        if args.arch == 'resnet18':
+        
+        if args.arch == 'wideresnet':
+            # Load model
+            ###################################################################
+            model = WideResNet()
+            model_path = "/home/zsarwar/Projects/SparseDNNs/adversarial-attacks-pytorch/demo/models/cifar10/L2/Standard.pt"
+            checkpoint = torch.load(model_path, map_location=torch.device('cuda:0'))
+            state_dict = checkpoint['state_dict']
+            model.load_state_dict(state_dict)
+            ###################################################################
+        
+        
+        
+        elif args.arch == 'resnet18':
             model = models.__dict__[args.arch](weights=ResNet18_Weights.IMAGENET1K_V2)
-        if args.arch == 'resnet50':
+        elif args.arch == 'resnet50':
             model = models.__dict__[args.arch](weights=ResNet50_Weights.IMAGENET1K_V2)
         if args.new_classifier:
+            pass
+            """
             if args.arch == 'resnet50':
                model.fc = nn.Linear(in_features=2048, out_features=args.num_classes, bias=True)
             if args.arch == 'resnet18':
                model.fc = nn.Linear(in_features=512, out_features=args.num_classes, bias=True)
+            """
     else:
         logger.critical(f"=> creating model {args.arch}")
         model = models.__dict__[args.arch]()
         
         if args.new_classifier:
+            pass
+            """
             if args.arch == 'resnet50':
                 model.fc = nn.Linear(in_features=2048, out_features=args.num_classes, bias=True)
             if args.arch == 'resnet18':
                 model.fc = nn.Linear(in_features=512, out_features=args.num_classes, bias=True)
-    
+            """
     
     # Add option to freeze/unfreeze more layers
     # TODO
@@ -421,7 +440,7 @@ def main_worker(gpu, ngpus_per_node, args):
                                         )
     val_loader = torch.utils.data.DataLoader(valset, batch_size=args.batch_size,
                                             shuffle=False, num_workers=args.workers)
-    
+    """"
     for epoch in range(args.start_epoch, args.epochs):
 
         # train for one epoch
@@ -467,7 +486,7 @@ def main_worker(gpu, ngpus_per_node, args):
         #optimizer.load_state_dict(checkpoint['optimizer'])
         scheduler.load_state_dict(checkpoint['scheduler'])
         logger.critical(f"=> loaded checkpoint '{best_ckpt_path}' (epoch {best_epoch})")
-    
+    """
     validate(val_loader, model, criterion, args)
 
     """

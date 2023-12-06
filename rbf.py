@@ -10,6 +10,7 @@ parser.add_argument('--gpu', type=int)
 parser.add_argument('--total_attack_samples', type=int)
 parser.add_argument('--total_train_samples', type=int)
 parser.add_argument('--attack', type=str)
+parser.add_argument('--detector_type', type=str)
 parser.add_argument('--trainer_type', type=str)
 parser.add_argument('--integrated', type=str)
 parser.add_argument('--train', type=str)
@@ -45,7 +46,6 @@ import pandas as pd
 from sklearn.svm import OneClassSVM
 import torchvision
 from sklearn.model_selection import GridSearchCV, StratifiedShuffleSplit
-from sklearn.svm import SVC
 import hashlib
 import logging
 import torch.backends.cudnn as cudnn
@@ -57,16 +57,17 @@ torch.manual_seed(args.seed)
 cudnn.deterministic = True
 cudnn.benchmark = False
 
+"""
 def load_data(path, label):
     with open(path, 'rb') as iffile:
         features = pickle.load(iffile)
-    layer = 'flatten'
+    layer = 'view'
     features = features[layer]
     features_matrix = None
 
     for i in range(len(features)):
         if isinstance(features_matrix, torch.Tensor):
-            features_matrix = torch.cat((   features_matrix, features[i]))
+            features_matrix = torch.cat((features_matrix, features[i]))
         else:
             features_matrix = features[i]
 
@@ -75,13 +76,21 @@ def load_data(path, label):
     y = np.empty(features_matrix.shape[0])
     y.fill(label)
     return [features_matrix, y]
+"""
+
+def load_data(path, label):
+    features_matrix = torch.load(path)
+    y = np.empty(features_matrix.shape[0])
+    y.fill(label)
+    return [features_matrix, y]
+
+    
 
 
 def unison_shuffled_copies_ind(X, y):
     assert len(X) == len(y)
     p = np.random.permutation(len(X))
     return X[p], y[p]
-
 
 def unison_shuffled_copies(x_ben, y_ben, x_adv, y_adv):
     X = np.concatenate((x_ben, x_adv), axis=0)
@@ -93,10 +102,10 @@ def unison_shuffled_copies(x_ben, y_ben, x_adv, y_adv):
 
 def get_paths(base_path):
     relu_dir = "ReLUs"
-    train_benign = f"ReLUs_{args.attack}_train_benign_{args.total_attack_samples}_integrated-{args.integrated}.pkl"
-    train_adversarial = f"ReLUs_{args.attack}_train_adversarial_{args.total_attack_samples}_integrated-{args.integrated}.pkl"
-    test_benign = f"ReLUs_{args.attack}_test_benign_{args.total_attack_samples}_integrated-{args.integrated}.pkl"
-    test_adversarial = f"ReLUs_{args.attack}_test_adversarial_{args.total_attack_samples}_integrated-{args.integrated}.pkl"
+    train_benign = f"ReLUs_{args.attack}_train_benign_{args.total_attack_samples}_detector-type-{args.detector_type}_integrated-{args.integrated}.pth"
+    train_adversarial = f"ReLUs_{args.attack}_train_adversarial_{args.total_attack_samples}_detector-type-{args.detector_type}_integrated-{args.integrated}.pth"
+    test_benign = f"ReLUs_{args.attack}_test_benign_{args.total_attack_samples}_detector-type-{args.detector_type}_integrated-{args.integrated}.pth"
+    test_adversarial = f"ReLUs_{args.attack}_test_adversarial_{args.total_attack_samples}_detector-type-{args.detector_type}_integrated-{args.integrated}.pth"
 
     train_benign = os.path.join(base_path, relu_dir, train_benign)
     train_adversarial = os.path.join(base_path, relu_dir,  train_adversarial)
@@ -106,6 +115,13 @@ def get_paths(base_path):
     all_paths = [train_benign,train_adversarial,test_benign,test_adversarial]
 
     return all_paths
+
+
+def quantize(X):
+    X[0] = torch.where(X[0] > 0, torch.ones_like(X[0]), torch.zeros_like(X[0]))
+    return X
+
+
 
 best_acc1 = 0
 
@@ -152,10 +168,21 @@ if args.train:
     train_adversarial = load_data(train_adversarial, -1)
     test_benign = load_data(test_benign, 1)
     test_adversarial = load_data(test_adversarial, -1)
+
+
+    if args.detector_type == 'Quantized':
+        print("Quantizing the ReLUs")
+        train_benign = quantize(train_benign)
+        train_adversarial = quantize(train_adversarial)
+        test_benign = quantize(test_benign)
+        test_adversarial = quantize(test_adversarial)
+
+
+
+
     min_train = min(train_benign[0].shape[0], train_adversarial[0].shape[0])
     min_test = min(test_benign[0].shape[0], test_adversarial[0].shape[0])
     # Subsample the larger sets
-
     rand_indices = np.random.choice(train_benign[0].shape[0], size=min_train, replace=False)
     train_benign[0] = train_benign[0][rand_indices] 
     train_benign[1] = train_benign[1][rand_indices]
@@ -167,7 +194,6 @@ if args.train:
     X_train, y_train = unison_shuffled_copies(train_benign[0], train_benign[1], train_adversarial[0], train_adversarial[1])
 
     X_test, y_test = unison_shuffled_copies(test_benign[0], test_benign[1], test_adversarial[0], test_adversarial[1])
-
 
     clf = SVC(C=0.7, gamma=0.075)
     clf.fit(X_train, y_train)
@@ -183,6 +209,10 @@ if args.train:
 
     logger.critical(f"Training acc : {train_acc}")
     logger.critical(f"Test acc : {test_acc}")
+
+    print(f"Training acc : {train_acc}")
+    print(f"Test acc : {test_acc}")
+
 
     # Test classwise
     x_train_ben_pred = clf.predict(train_benign[0])
@@ -203,8 +233,15 @@ if args.train:
     logger.critical(f"Testing benign acc : {test_ben_acc}")
     logger.critical(f"Testing adversarial acc : {test_adv_acc}")
 
+    print(f"Training benign acc : {train_ben_acc}")
+    print(f"Training adversarial acc : {train_adv_acc}")
+    print(f"-------------------------------------")
+    print(f"Testing benign acc : {test_ben_acc}")
+    print(f"Testing adversarial acc : {test_adv_acc}")
+
+
     # Save rbf model
-    rbf_config = f"RBF_{args.attack}_{args.total_attack_samples}.pkl" 
+    rbf_config = f"RBF_{args.attack}_{args.total_train_samples}_{args.detector_type}.pkl" 
     rbf_path = os.path.join(expr_dir, "RBF", rbf_config)
 
     with open(rbf_path,'wb') as f:
@@ -213,17 +250,17 @@ if args.train:
 
 else:
     print("Testing RBF...")
-    # Do test code here
 
     if args.test_type == 'benign':
-        logging_path = os.path.join(expr_dir,"test_rbf_integrated_benign.log")
+        logging_path = os.path.join(expr_dir,f"test_rbf_integrated_type-{args.test_type}-detector-type-{args.detector_type}.log")
         _,__,test_path,____ = get_paths(expr_dir)
         test_data = load_data(test_path, 1)
 
     elif args.test_type == 'adversarial':
-        logging_path = os.path.join(expr_dir,"test_rbf_integrated_adversarial.log")
+        logging_path = os.path.join(expr_dir,f"test_rbf_integrated_type-{args.test_type}-detector-type-{args.detector_type}.log")
         _,__,___,test_path = get_paths(expr_dir)
-        test_data = load_data(test_path, 1)
+        test_data = load_data(test_path, -1)
+
 
     logging.basicConfig(filename=logging_path,
                         format='%(asctime)s %(message)s',
@@ -238,7 +275,7 @@ else:
     X, y = unison_shuffled_copies_ind(test_data[0], test_data[1])
 
     # Loading svm
-    rbf_config = f"RBF_{args.attack}_{args.total_train_samples}.pkl" 
+    rbf_config = f"RBF_{args.attack}_{args.total_train_samples}_{args.detector_type}.pkl"
     rbf_path = os.path.join(expr_dir, "RBF", rbf_config)
 
     with open(rbf_path,'rb') as in_model:
