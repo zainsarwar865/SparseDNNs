@@ -66,7 +66,10 @@ import torch.backends.cudnn as cudnn
 from utils.wide_resnet import WideResNet
 
 if args.integrated:
-    from torchattacks.attacks.cw_integrated import CW_RBF as CW
+    if args.detector_type == 'Quantized':
+        from torchattacks.attacks.cw_integrated_quantized import CW_RBF as CW
+    elif args.detector_type == 'Regular':
+        from torchattacks.attacks.cw_integrated import CW_RBF as CW
 else:
     from torchattacks import CW, DeepFool
 

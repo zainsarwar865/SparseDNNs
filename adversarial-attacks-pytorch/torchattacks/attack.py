@@ -76,8 +76,8 @@ class Attack(object):
     def get_logits(self, inputs, labels=None, *args, **kwargs):
         if self._normalization_applied is False:
             inputs = self.normalize(inputs)
-        logits = self.model(inputs)
-        return logits
+        logits, relu_feats = self.model(inputs)
+        return logits, relu_feats
 
     @wrapper_method
     def _set_normalization_applied(self, flag):
@@ -119,8 +119,12 @@ class Attack(object):
         return (inputs - mean) / std
 
     def inverse_normalize(self, inputs):
+        
         mean = self.normalization_used["mean"].to(inputs.device)
+        print("Mean for denorm", mean)
+        
         std = self.normalization_used["std"].to(inputs.device)
+        print("Std for mean", std)
         return inputs * std + mean
 
     def get_mode(self):
@@ -501,20 +505,14 @@ class Attack(object):
         if self._normalization_applied is True:
             inputs = self.inverse_normalize(inputs)
             self._set_normalization_applied(False)
-
-            adv_inputs = self.forward(inputs, labels, *args, **kwargs)
-            # adv_inputs = self.to_type(adv_inputs, self.return_type)
-
+            adv_inputs= self.forward(inputs, labels, *args, **kwargs)
             adv_inputs = self.normalize(adv_inputs)
             self._set_normalization_applied(True)
         else:
-            adv_inputs = self.forward(inputs, labels, *args, **kwargs)
-            # adv_inputs = self.to_type(adv_inputs, self.return_type)
-
+            adv_inputs, og_inputs = self.forward(inputs, labels, *args, **kwargs)
         self._recover_model_mode(given_training)
-
-        return adv_inputs
-
+        return adv_inputs, og_inputs
+    
     def __repr__(self):
         info = self.__dict__.copy()
 

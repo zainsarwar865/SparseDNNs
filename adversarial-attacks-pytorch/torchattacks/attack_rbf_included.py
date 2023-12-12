@@ -35,8 +35,8 @@ class Attack(object):
         """
 
         # Hooks for rbf
-        self.fc_activations = None
-        self.fc_hook = model.fc.register_forward_hook(self.fc_hook)
+        #self.fc_activations = None
+        #self.fc_hook = model.fc.register_forward_hook(self.fc_hook)
         
         
         self.attack = name
@@ -79,10 +79,11 @@ class Attack(object):
         self.model_name = model.__class__.__name__
 
     def get_logits(self, inputs, labels=None, *args, **kwargs):
+        
         if self._normalization_applied is False:
             inputs = self.normalize(inputs)
-        logits = self.model(inputs)
-        return logits
+        logits, relu_feats = self.model(inputs)
+        return logits, relu_feats
 
     @wrapper_method
     def _set_normalization_applied(self, flag):
@@ -507,6 +508,7 @@ class Attack(object):
             self._set_normalization_applied(False)
 
             adv_inputs, og_inputs = self.forward(inputs, labels, *args, **kwargs)
+            
             # adv_inputs = self.to_type(adv_inputs, self.return_type)
 
             adv_inputs = self.normalize(adv_inputs)
@@ -569,6 +571,7 @@ class Attack(object):
             for subname, subvalue in value.__dict__.get("_attacks").items():
                 attacks[name + "." + subname] = subvalue
 
-
+    """
     def fc_hook(self, module, input, output):
         self.fc_activations = input
+    """

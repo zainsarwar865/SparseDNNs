@@ -190,6 +190,7 @@ def main():
         torch.manual_seed(args.seed)
         cudnn.deterministic = True
         cudnn.benchmark = False
+        np.random.seed(args.seed)
 
     args.distributed = args.multiprocessing_distributed
     if torch.cuda.is_available():
@@ -343,7 +344,6 @@ def main_worker(gpu, ngpus_per_node, args):
                                             )
         random_indices = np.random.randint(low=0, high = len(valset), size=(args.total_attack_samples))
         valset = Subset(valset, indices=random_indices)
-
     val_loader = torch.utils.data.DataLoader(valset, batch_size=args.batch_size,
                                             shuffle=False, num_workers=args.workers)
     

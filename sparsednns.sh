@@ -1,10 +1,10 @@
 CREATE_ROOT=false
 TRAIN_MT_BASELINE=false
-RUN_ATTACK=true
-TEST_ADVERSARIAL=true
-FEATURE_EXTRACTION_BENIGN=true
-FEATURE_EXTRACTION_ADVERSARIAL=true
-TRAIN_RBF=true
+RUN_ATTACK=false
+TEST_ADVERSARIAL=false
+FEATURE_EXTRACTION_BENIGN=false
+FEATURE_EXTRACTION_ADVERSARIAL=false
+TRAIN_RBF=false
 
 TEST_MT_INTEGRATED_PREATTACK=false
 RUN_ATTACK_INTEGRATED=true
@@ -18,10 +18,10 @@ BashPath="$PWD"/$BashName
 home_dir=/home/zsarwar/Projects/SparseDNNs
 
 # Generic params
-gpu=1
+gpu=0
 seed=42
 attack="CW"
-detector_type="Regular" # Regular
+detector_type="Quantized" # Regular
 
 # Setup the directory for an experiment
 #############################################################################################
@@ -196,7 +196,7 @@ fi
 #############################################################################################
 # Test adversarial samples on the model
 
-TEST_MT_ADVERSARIAL_TRAIN=true
+TEST_MT_ADVERSARIAL_TRAIN=false
 TEST_MT_ADVERSARIAL_TEST=true
 test_type=adversarial
 if [ "$TEST_ADVERSARIAL" = true ]
@@ -507,10 +507,10 @@ fi
 
 original_dataset=cifar10
 c=0.02
-d=0.09
+d=0.3
 steps=500
 lr=0.01
-batch_size=512
+batch_size=128
 total_attack_samples_test=5120
 
 

@@ -50,6 +50,7 @@ class CW(Attack):
         """
 
         images = images.clone().detach().to(self.device)
+        #print("Inside forward", images[0])
         labels = labels.clone().detach().to(self.device)
 
         if self.targeted:
@@ -72,6 +73,7 @@ class CW(Attack):
 
         for step in range(self.steps):
             # Get adversarial images
+            print("On step : ", step)
             adv_images = self.tanh_space(w)
 
             # Calculate loss
@@ -79,7 +81,7 @@ class CW(Attack):
             L2_loss = current_L2.sum()
         
 
-            outputs = self.get_logits(adv_images)
+            outputs, relu_feats = self.get_logits(adv_images)
             if self.targeted:
                 f_loss = self.f(outputs, target_labels).sum()
             else:
@@ -118,11 +120,11 @@ class CW(Attack):
             if step % max(self.steps // 10, 1) == 0:
                 if cost.item() > prev_cost:
                     best_adv_images = best_adv_images.detach().cpu()
-                    return best_adv_images
+                    return best_adv_images, images.cpu()
                 prev_cost = cost.item()
 
         best_adv_images = best_adv_images.detach().cpu()
-        return best_adv_images
+        return best_adv_images, images.cpu()
 
     def tanh_space(self, x):
         return 1 / 2 * (torch.tanh(x) + 1)

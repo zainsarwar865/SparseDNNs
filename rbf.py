@@ -119,6 +119,7 @@ def get_paths(base_path):
 
 def quantize(X):
     X[0] = torch.where(X[0] > 0, torch.ones_like(X[0]), torch.zeros_like(X[0]))
+    
     return X
 
 
@@ -142,7 +143,7 @@ expr_dir = os.path.join(mt_root_directory, expr_name)
 
 if args.train:
 
-    logging_path = os.path.join(expr_dir,"train_rbf.log")
+    logging_path = os.path.join(expr_dir,f"train_rbf_{args.detector_type}_{args.total_attack_samples}.log")
 
 
     logging.basicConfig(filename=logging_path,
@@ -195,7 +196,11 @@ if args.train:
 
     X_test, y_test = unison_shuffled_copies(test_benign[0], test_benign[1], test_adversarial[0], test_adversarial[1])
 
-    clf = SVC(C=0.7, gamma=0.075)
+    if args.detector_type == 'Regular':
+        clf = SVC(C=0.7, gamma=0.075)
+    elif args.detector_type == 'Quantized':
+        clf = SVC(C=0.7, gamma=0.03)
+
     clf.fit(X_train, y_train)
 
     # Testing
@@ -254,13 +259,19 @@ else:
     if args.test_type == 'benign':
         logging_path = os.path.join(expr_dir,f"test_rbf_integrated_type-{args.test_type}-detector-type-{args.detector_type}.log")
         _,__,test_path,____ = get_paths(expr_dir)
+        print("Test path is ", test_path)
         test_data = load_data(test_path, 1)
 
     elif args.test_type == 'adversarial':
+        print("testing adversarial")
         logging_path = os.path.join(expr_dir,f"test_rbf_integrated_type-{args.test_type}-detector-type-{args.detector_type}.log")
         _,__,___,test_path = get_paths(expr_dir)
         test_data = load_data(test_path, -1)
 
+
+    if args.detector_type == 'Quantized':
+        print("Quantizing the ReLUs")
+        test_data = quantize(test_data)
 
     logging.basicConfig(filename=logging_path,
                         format='%(asctime)s %(message)s',
@@ -277,7 +288,7 @@ else:
     # Loading svm
     rbf_config = f"RBF_{args.attack}_{args.total_train_samples}_{args.detector_type}.pkl"
     rbf_path = os.path.join(expr_dir, "RBF", rbf_config)
-
+    print("Rbf path is ", rbf_path)
     with open(rbf_path,'rb') as in_model:
         clf = pickle.load(in_model)
 

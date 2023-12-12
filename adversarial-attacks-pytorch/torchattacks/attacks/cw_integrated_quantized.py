@@ -4,6 +4,27 @@ import torch.optim as optim
 import sys
 from ..attack_rbf_included import Attack
 
+import torch
+class BinarizeWithSigmoidGradient(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, input):
+        """
+        Forward pass: Binarizes the input tensor
+        """
+        #output = torch.zeros_like(input)
+        #output[input > 0] = 1.0
+        output = torch.where(input > 0, torch.ones_like(input), torch.zeros_like(input))
+        ctx.save_for_backward(input)  # Save input for gradient calculation
+        return output
+    @staticmethod
+    def backward(ctx, grad_output):
+        """
+        Backward pass: Calculates gradients using a sigmoid approximation
+        """
+        input, = ctx.saved_tensors
+        sigmoid = torch.nn.Sigmoid()  # Apply sigmoid for smooth gradient approximation
+        return grad_output * sigmoid(input) * (1 - sigmoid(input))
+
 class CW_RBF(Attack):
     r"""
     CW in the paper 'Towards Evaluating the Robustness of Neural Networks'
@@ -44,13 +65,12 @@ class CW_RBF(Attack):
         self.lr = lr
         self.supported_mode = ["default", "targeted"]
         self.rbf = rbf
-
+        self.quantizer = BinarizeWithSigmoidGradient.apply
 
     def forward(self, images, labels):
         r"""
         Overridden.
         """
-
         images = images.clone().detach().to(self.device)
         labels = labels.clone().detach().to(self.device)
         if self.targeted:
@@ -80,22 +100,22 @@ class CW_RBF(Attack):
             current_L2 = MSELoss(Flatten(adv_images), Flatten(images)).sum(dim=1)
             L2_loss = current_L2.sum()
             outputs, relu_feats = self.get_logits(adv_images)
+            #relu_feats = self.quantize(relu_feats)
+            relus_quantized = self.quantizer(relu_feats)
             # rbf loss
-            rbf_preds = self.rbf(relu_feats)
+            rbf_preds = self.rbf(relus_quantized)
             red_indices = torch.where(rbf_preds > 0)[0]
             rbf_loss = MSELoss_svm(rbf_preds, target_scores)
             rbf_loss[red_indices] = 0
             rbf_loss = rbf_loss.sum()            
-            #print("Tot Succ samples: ", len(red_indices))
-            #print("Tot samples in batch : ", rbf_preds.shape)
             if self.targeted:
                 f_loss = self.f(outputs, target_labels).sum()
             else:
                 f_loss = self.f(outputs, labels).sum()
 
             #cost_og = L2_loss + self.c * f_loss
-            cost = L2_loss + self.c * f_loss + 0.03*rbf_loss 
-            #cost = L2_loss + self.c * f_loss + self.d*rbf_loss
+            #cost = L2_loss + self.c * f_loss + 0.03*rbf_loss 
+            cost = L2_loss + self.c * f_loss + self.d*rbf_loss
             #cost = L2_loss + self.c * f_loss
             print("L2_loss: ",  L2_loss.item())
             print("rbf_loss: ",  rbf_loss.item())
@@ -132,18 +152,14 @@ class CW_RBF(Attack):
             # max(.,1) To prevent MODULO BY ZERO error in the next step.
             if step % max(self.steps // 10, 1) == 0:
                 if cost.item() > prev_cost:
-                    #print("adv image", adv_images)
-                    print("Relu feats", relu_feats)
                     best_adv_images = best_adv_images.detach().cpu()
                     adv_images = adv_images.detach().cpu()
-                    #return best_adv_images, images.detach().cpu()
                     return adv_images, images.detach().cpu()
                 prev_cost = cost.item()
         best_adv_images = best_adv_images.detach().cpu()
         adv_images = adv_images.detach().cpu()
        
         return adv_images, images.detach().cpu()
-        #return best_adv_images, images.cpu()
 
     def tanh_space(self, x):
         return 1 / 2 * (torch.tanh(x) + 1)
@@ -169,3 +185,7 @@ class CW_RBF(Attack):
             return torch.clamp((other - real), min=-self.kappa)
         else:
             return torch.clamp((real - other), min=-self.kappa)
+
+    def quantize(self, X):
+        X[0] = torch.where(X[0] > 0, torch.ones_like(X[0]), torch.zeros_like(X[0]))
+        return X
