@@ -4,7 +4,8 @@ dataset_root_paths = {
     "OpenImages": "/bigstor/zsarwar/OpenImages/DF/",
     "food101": "/bigstor/common_data/food_101/DF", 
     "uecfood256": "/bigstor/common_data/UECFOOD256/DF/",
-    "cifar10": "/bigstor/zsarwar/CIFAR10"
+    "cifar10": "/bigstor/zsarwar/CIFAR10",
+    "cifar100": "/bigstor/zsarwar/cifar-100-python/"
 }
 
 dataset_configs = {

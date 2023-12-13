@@ -1,9 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-
 from ..attack import Attack
-
 
 class CW(Attack):
     r"""
@@ -43,6 +41,7 @@ class CW(Attack):
         self.steps = steps
         self.lr = lr
         self.supported_mode = ["default", "targeted"]
+        self.set_mode_targeted_random()
 
     def forward(self, images, labels):
         r"""

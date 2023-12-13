@@ -22,7 +22,8 @@ import torch.utils.data.distributed
 import torchvision.datasets as datasets
 import torchvision
 import torchvision.models as models
-from torchvision.models import resnet50, resnet18, ResNet50_Weights, ResNet18_Weights
+from torchvision.models import resnet50, ResNet50_Weights, ResNet18_Weights
+from utils.resnet import resnet18
 import torchvision.transforms as transforms
 from torch.optim.lr_scheduler import StepLR, CosineAnnealingLR, LinearLR, SequentialLR
 from torch.utils.data import Subset
@@ -251,6 +252,30 @@ def main_worker(gpu, ngpus_per_node, args):
                model.fc = nn.Linear(in_features=2048, out_features=args.num_classes, bias=True)
             if args.arch == 'resnet18':
                model.fc = nn.Linear(in_features=512, out_features=args.num_classes, bias=True)
+
+            # Loading the best checkpoint
+            best_ckpt_name = "model_best.pth.tar"
+            best_ckpt_path = os.path.join(ckpt_dir, best_ckpt_name)
+            logger.critical(best_ckpt_path)
+            logger.critical("Testing after training")
+            if args.gpu is None:
+                checkpoint = torch.load(best_ckpt_path, map_location=loc)
+            elif torch.cuda.is_available():
+                # Map model to be loaded to specified single gpu.
+                loc = 'cuda:{}'.format(args.gpu)
+                # Load best checkpoint
+                checkpoint = torch.load(best_ckpt_path, map_location=loc)
+            best_epoch = checkpoint['epoch']
+            best_acc1 = checkpoint['best_acc1']
+            best_acc1 = torch.tensor(best_acc1)
+            if args.gpu is not None:
+            # best_acc1 may be from a checkpoint from a different GPU
+                best_acc1 = best_acc1.to(args.gpu)
+            model.load_state_dict(checkpoint['state_dict'])
+            #optimizer.load_state_dict(checkpoint['optimizer'])
+            logger.critical(f"=> loaded checkpoint '{best_ckpt_path}' (epoch {best_epoch})")
+
+
     else:
         logger.critical(f"=> creating model {args.arch}")
         
@@ -263,17 +288,40 @@ def main_worker(gpu, ngpus_per_node, args):
             state_dict = checkpoint['state_dict']
             model.load_state_dict(state_dict)
             ###################################################################
-        #model = models.__dict__[args.arch]()
-        
+        elif args.arch == 'resnet18':
+            model = resnet18()
+        else:
+            model = models.__dict__[args.arch]()
+            print("Now and then...")
         if args.new_classifier:
-            pass
-            """
             if args.arch == 'resnet50':
                 model.fc = nn.Linear(in_features=2048, out_features=args.num_classes, bias=True)
             if args.arch == 'resnet18':
                 model.fc = nn.Linear(in_features=512, out_features=args.num_classes, bias=True)
-            """
-    
+
+            best_ckpt_name = "model_best.pth.tar"
+            best_ckpt_path = os.path.join(ckpt_dir, best_ckpt_name)
+            logger.critical(best_ckpt_path)
+            logger.critical("Testing after training")
+            if args.gpu is None:
+                checkpoint = torch.load(best_ckpt_path, map_location=loc)
+            elif torch.cuda.is_available():
+                # Map model to be loaded to specified single gpu.
+                loc = 'cuda:{}'.format(args.gpu)
+                # Load best checkpoint
+                checkpoint = torch.load(best_ckpt_path, map_location=loc)
+            best_epoch = checkpoint['epoch']
+            best_acc1 = checkpoint['best_acc1']
+            best_acc1 = torch.tensor(best_acc1)
+            if args.gpu is not None:
+            # best_acc1 may be from a checkpoint from a different GPU
+                best_acc1 = best_acc1.to(args.gpu)
+            model.load_state_dict(checkpoint['state_dict'])
+            #optimizer.load_state_dict(checkpoint['optimizer'])
+            #scheduler.load_state_dict(checkpoint['scheduler'])
+            logger.critical(f"=> loaded checkpoint '{best_ckpt_path}' (epoch {best_epoch})")
+
+
     # Add option to freeze/unfreeze more layers
     # TODO
     if args.freeze_layers:
@@ -426,56 +474,6 @@ def main_worker(gpu, ngpus_per_node, args):
     
 
     # Test after training
-    # Loading the best checkpoint
-    """
-    if not args.eval_pretrained:
-        best_ckpt_name = "model_best.pth.tar"
-        best_ckpt_path = os.path.join(ckpt_dir, best_ckpt_name)
-        logger.critical(best_ckpt_path)
-        logger.critical("Testing after training")
-        if args.gpu is None:
-            checkpoint = torch.load(best_ckpt_path, map_location=loc)
-        elif torch.cuda.is_available():
-            # Map model to be loaded to specified single gpu.
-            loc = 'cuda:{}'.format(args.gpu)
-            # Load best checkpoint
-            checkpoint = torch.load(best_ckpt_path, map_location=loc)
-        best_epoch = checkpoint['epoch']
-        best_acc1 = checkpoint['best_acc1']
-        best_acc1 = torch.tensor(best_acc1)
-        if args.gpu is not None:
-        # best_acc1 may be from a checkpoint from a different GPU
-            best_acc1 = best_acc1.to(args.gpu)
-        model.load_state_dict(checkpoint['state_dict'])
-        #optimizer.load_state_dict(checkpoint['optimizer'])
-        scheduler.load_state_dict(checkpoint['scheduler'])
-        logger.critical(f"=> loaded checkpoint '{best_ckpt_path}' (epoch {best_epoch})")
-    """
-    """
-    # Extract Relus from the training data of layer X
-    class ResNetFeatureExtractor(torch.nn.Module):
-        def __init__(self, model):
-            super().__init__()
-            # Pretrained resnet model
-            m = model
-            return_nodes = {
-                # node_name: user-specified key for output dict
-                #'layer3.1.relu': 'layer3_1_0',
-                #'layer3.1.relu_1': 'layer3_1_1',
-                #'layer4.0.relu': 'layer_4_0_0',
-                #'layer4.0.relu_1': 'layer_4_0_1',
-                #'layer4.1.relu': 'layer4_1_0',
-                #'layer4.1.relu_1': 'layer4_1_1',
-                'view': 'view',
-            }
-            self.body = create_feature_extractor(
-                m, return_nodes= return_nodes)
-        def forward(self, x):
-            x = self.body(x)
-            return x
-     
-    model = ResNetFeatureExtractor(model)
-    """
     if args.extract_split == 'train':
         extract_features(train_loader, model, args)
     elif args.extract_split == 'test':

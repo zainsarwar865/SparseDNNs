@@ -33,6 +33,7 @@ class CustomImageDataset_Adv(Dataset):
     def __init__(self, dataset_tuple, transform=None, target_transform=None):
         self.data = dataset_tuple[0]
         self.labels = dataset_tuple[1]
+        self.transform = transform
 
     def __len__(self):
         return len(self.data)

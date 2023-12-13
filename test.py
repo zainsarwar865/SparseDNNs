@@ -22,7 +22,8 @@ import torch.utils.data.distributed
 import torchvision.datasets as datasets
 import torchvision
 import torchvision.models as models
-from torchvision.models import resnet50, resnet18, ResNet50_Weights, ResNet18_Weights
+from torchvision.models import resnet50, ResNet50_Weights, ResNet18_Weights
+from utils.resnet import resnet18
 import torchvision.transforms as transforms
 from torch.optim.lr_scheduler import StepLR, CosineAnnealingLR, LinearLR, SequentialLR
 from torch.utils.data import Subset
@@ -225,36 +226,65 @@ def main_worker(gpu, ngpus_per_node, args):
             model.load_state_dict(state_dict)
             ###################################################################
         elif args.arch == 'resnet18':
-            model = models.__dict__[args.arch](weights=ResNet18_Weights.IMAGENET1K_V2)
+            #model = models.__dict__[args.arch](weights=ResNet18_Weights.IMAGENET1K_V2)
+            model = resnet18()
         elif args.arch == 'resnet50':
             model = models.__dict__[args.arch](weights=ResNet50_Weights.IMAGENET1K_V2)
         if args.new_classifier:
-            pass
-            """
             if args.arch == 'resnet50':
                model.fc = nn.Linear(in_features=2048, out_features=args.num_classes, bias=True)
             if args.arch == 'resnet18':
                model.fc = nn.Linear(in_features=512, out_features=args.num_classes, bias=True)
-            """
+
     else:
         logger.critical(f"=> creating model {args.arch}")
-        #model = models.__dict__[args.arch]()
-        # Load model
-        ###################################################################
-        model = WideResNet()
-        model_path = "/home/zsarwar/Projects/SparseDNNs/adversarial-attacks-pytorch/demo/models/cifar10/L2/Standard.pt"
-        checkpoint = torch.load(model_path, map_location=torch.device('cuda:0'))
-        state_dict = checkpoint['state_dict']
-        model.load_state_dict(state_dict)
-        ###################################################################
+        if args.arch == 'wideresnet':
+            # Load model
+            ###################################################################
+            model = WideResNet()
+            model_path = "/home/zsarwar/Projects/SparseDNNs/adversarial-attacks-pytorch/demo/models/cifar10/L2/Standard.pt"
+            checkpoint = torch.load(model_path, map_location=torch.device('cuda:0'))
+            state_dict = checkpoint['state_dict']
+            model.load_state_dict(state_dict)
+            ###################################################################
+        else:
+            #model = models.__dict__[args.arch]()
+            model = resnet18()
+            # Test after training
+
         if args.new_classifier:
-            pass
-            """
             if args.arch == 'resnet50':
                 model.fc = nn.Linear(in_features=2048, out_features=args.num_classes, bias=True)
             if args.arch == 'resnet18':
                 model.fc = nn.Linear(in_features=512, out_features=args.num_classes, bias=True)
-            """
+    
+            if args.arch == 'resnet50':
+                # Test after training
+                # Loading the best checkpoint    
+                best_ckpt_name = "model_best.pth.tar"
+                best_ckpt_path = os.path.join(ckpt_dir, best_ckpt_name)
+                logger.critical(best_ckpt_path)
+                logger.critical("Testing after training")
+                if args.gpu is None:
+                    checkpoint = torch.load(best_ckpt_path, map_location=loc)
+                elif torch.cuda.is_available():
+                    # Map model to be loaded to specified single gpu.
+                    loc = 'cuda:{}'.format(args.gpu)
+                    # Load best checkpoint
+                    checkpoint = torch.load(best_ckpt_path, map_location=loc)
+                best_epoch = checkpoint['epoch']
+                best_acc1 = checkpoint['best_acc1']
+                best_acc1 = torch.tensor(best_acc1)
+                if args.gpu is not None:
+                # best_acc1 may be from a checkpoint from a different GPU
+                    best_acc1 = best_acc1.to(args.gpu)
+                model.load_state_dict(checkpoint['state_dict'])
+                logger.critical(f"=> loaded checkpoint '{best_ckpt_path}' (epoch {best_epoch})")
+                logger.critical(f"Evaluating {args.attack_split}")
+
+    
+    
+    
     
     # Add option to freeze/unfreeze more layers
     # TODO
@@ -347,30 +377,8 @@ def main_worker(gpu, ngpus_per_node, args):
     val_loader = torch.utils.data.DataLoader(valset, batch_size=args.batch_size,
                                             shuffle=False, num_workers=args.workers)
     
-    """
-    # Test after training
-    # Loading the best checkpoint    
-    best_ckpt_name = "model_best.pth.tar"
-    best_ckpt_path = os.path.join(ckpt_dir, best_ckpt_name)
-    logger.critical(best_ckpt_path)
-    logger.critical("Testing after training")
-    if args.gpu is None:
-        checkpoint = torch.load(best_ckpt_path, map_location=loc)
-    elif torch.cuda.is_available():
-        # Map model to be loaded to specified single gpu.
-        loc = 'cuda:{}'.format(args.gpu)
-        # Load best checkpoint
-        checkpoint = torch.load(best_ckpt_path, map_location=loc)
-    best_epoch = checkpoint['epoch']
-    best_acc1 = checkpoint['best_acc1']
-    best_acc1 = torch.tensor(best_acc1)
-    if args.gpu is not None:
-    # best_acc1 may be from a checkpoint from a different GPU
-        best_acc1 = best_acc1.to(args.gpu)
-    model.load_state_dict(checkpoint['state_dict'])
-    logger.critical(f"=> loaded checkpoint '{best_ckpt_path}' (epoch {best_epoch})")
-    logger.critical(f"Evaluating {args.attack_split}")
-    """
+    
+
     validate(val_loader, model, criterion, args)
 
 

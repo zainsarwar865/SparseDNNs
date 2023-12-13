@@ -36,8 +36,6 @@ from torch.utils.data.dataloader import default_collate
 import utils.utils as utils
 import utils.configs as configs
 from utils.wide_resnet import WideResNet
-#from torchvision.models.feature_extraction import create_feature_extractor
-
 
 model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
@@ -153,6 +151,14 @@ metrics_folder = "Metrics"
 metrics_dir = os.path.join(expr_dir, metrics_folder)
 relu_folder = "ReLUs"
 relu_dir = os.path.join(expr_dir, relu_folder)
+rbf_folder = "RBF"
+rbf_dir = os.path.join(expr_dir, rbf_folder)
+adv_datasets_folder = "Adversarial_Datasets"
+adv_datasets_dir = os.path.join(expr_dir, adv_datasets_folder)
+benign_datasets_folder = "Benign_Datasets"
+benign_datasets_dir = os.path.join(expr_dir, benign_datasets_folder)
+
+
 
 if not os.path.exists(relu_dir):
     os.makedirs(relu_dir)
@@ -160,8 +166,14 @@ if not os.path.exists(ckpt_dir):
     os.makedirs(ckpt_dir)
 if not os.path.exists(metrics_dir):
     os.makedirs(metrics_dir)
+if not os.path.exists(rbf_dir):
+    os.makedirs(rbf_dir)
+if not os.path.exists(adv_datasets_dir):
+    os.makedirs(adv_datasets_dir)
+if not os.path.exists(benign_datasets_dir):
+    os.makedirs(benign_datasets_dir)
 
-exit()
+
 # Create log files
 if(args.evaluate):
     logging_path = os.path.join(expr_dir,"test_log.log")
@@ -234,32 +246,24 @@ def main_worker(gpu, ngpus_per_node, args):
             model.load_state_dict(state_dict)
             ###################################################################
         
-        
-        
         elif args.arch == 'resnet18':
             model = models.__dict__[args.arch](weights=ResNet18_Weights.IMAGENET1K_V2)
         elif args.arch == 'resnet50':
             model = models.__dict__[args.arch](weights=ResNet50_Weights.IMAGENET1K_V2)
         if args.new_classifier:
-            pass
-            """
             if args.arch == 'resnet50':
                model.fc = nn.Linear(in_features=2048, out_features=args.num_classes, bias=True)
             if args.arch == 'resnet18':
                model.fc = nn.Linear(in_features=512, out_features=args.num_classes, bias=True)
-            """
     else:
         logger.critical(f"=> creating model {args.arch}")
         model = models.__dict__[args.arch]()
         
         if args.new_classifier:
-            pass
-            """
             if args.arch == 'resnet50':
                 model.fc = nn.Linear(in_features=2048, out_features=args.num_classes, bias=True)
             if args.arch == 'resnet18':
                 model.fc = nn.Linear(in_features=512, out_features=args.num_classes, bias=True)
-            """
     
     # Add option to freeze/unfreeze more layers
     # TODO
@@ -421,26 +425,41 @@ def main_worker(gpu, ngpus_per_node, args):
     transforms.TrivialAugmentWide(),
     transforms.ToTensor(),
     transforms.RandomErasing(args.random_erasing),
-    normalize,   
+    #normalize,   
     ])
 
     transform_test = transforms.Compose([
     transforms.ToTensor(),
-    normalize,   
+    #normalize,   
     ])
 
-    trainset = torchvision.datasets.CIFAR10(root='/bigstor/zsarwar/CIFAR10', train=True,
-                                            download=False, transform=transform_train)
-    
+    dataset_path = configs.dataset_root_paths[args.original_dataset]    
+
+    if args.original_dataset == 'cifar10':
+        trainset = torchvision.datasets.CIFAR10(root=dataset_path, train=True,
+                                                download=False, transform=transform_train)
+
+        valset = torchvision.datasets.CIFAR10(root=dataset_path, train=False,
+                                            download=False, transform=transform_test
+                                            )
+
+    elif args.original_dataset == 'cifar100':
+
+        trainset = torchvision.datasets.CIFAR100(root=dataset_path, train=True,
+                                                download=True, transform=transform_train)
+
+        valset = torchvision.datasets.CIFAR100(root=dataset_path, train=False,
+                                            download=True, transform=transform_test
+                                            )
+
+
+
     train_loader = torch.utils.data.DataLoader(trainset, batch_size=args.batch_size,
                                             shuffle=True, num_workers=args.workers, collate_fn=collate_fn)
 
-    valset = torchvision.datasets.CIFAR10(root='/bigstor/zsarwar/CIFAR10', train=False,
-                                        download=False, transform=transform_test
-                                        )
     val_loader = torch.utils.data.DataLoader(valset, batch_size=args.batch_size,
                                             shuffle=False, num_workers=args.workers)
-    """"
+    
     for epoch in range(args.start_epoch, args.epochs):
 
         # train for one epoch
@@ -486,36 +505,9 @@ def main_worker(gpu, ngpus_per_node, args):
         #optimizer.load_state_dict(checkpoint['optimizer'])
         scheduler.load_state_dict(checkpoint['scheduler'])
         logger.critical(f"=> loaded checkpoint '{best_ckpt_path}' (epoch {best_epoch})")
-    """
+    
     validate(val_loader, model, criterion, args)
 
-    """
-    # Extract Relus from the training data of layer X
-    class ResNetFeatureExtractor(torch.nn.Module):
-        def __init__(self, model):
-            super().__init__()
-            # Get a resnet50 backbone
-            m = model
-            
-            return_nodes = {
-                # node_name: user-specified key for output dict
-                'layer1.2.relu_2': 'layer1',
-                'layer2.3.relu_2': 'layer2',
-                'layer3.5.relu_2': 'layer3',
-                'layer4.2.relu_2': 'layer4',
-                'avgpool' : 'avgpool'
-            }
-
-            # Extract 4 main layers (note: MaskRCNN needs this particular name
-            # mapping for return nodes)
-            self.body = create_feature_extractor(
-                m, return_nodes= return_nodes)
-        def forward(self, x):
-            x = self.body(x)
-            return x
-     
-    #model = ResNetFeatureExtractor(model)
-    """
     
 
 

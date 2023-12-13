@@ -9,6 +9,8 @@ parser.add_argument('--seed', type=int, help="seed for pandas sampling")
 parser.add_argument('--gpu', type=int)
 parser.add_argument('--total_attack_samples', type=int)
 parser.add_argument('--total_train_samples', type=int)
+parser.add_argument('--C', type=float)
+parser.add_argument('--gamma', type=float)
 parser.add_argument('--attack', type=str)
 parser.add_argument('--detector_type', type=str)
 parser.add_argument('--trainer_type', type=str)
@@ -197,9 +199,9 @@ if args.train:
     X_test, y_test = unison_shuffled_copies(test_benign[0], test_benign[1], test_adversarial[0], test_adversarial[1])
 
     if args.detector_type == 'Regular':
-        clf = SVC(C=0.7, gamma=0.075)
+        clf = SVC(C=args.C, gamma=args.gamma)
     elif args.detector_type == 'Quantized':
-        clf = SVC(C=0.7, gamma=0.03)
+        clf = SVC(C=args.C, gamma=args.gamma)
 
     clf.fit(X_train, y_train)
 

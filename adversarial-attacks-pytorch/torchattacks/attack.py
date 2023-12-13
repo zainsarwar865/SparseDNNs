@@ -138,7 +138,6 @@ class Attack(object):
     def set_mode_default(self):
         r"""
         Set attack mode as default mode.
-
         """
         self.attack_mode = "default"
         self.targeted = False
@@ -157,13 +156,11 @@ class Attack(object):
     def set_mode_targeted_by_function(self, target_map_function, quiet=False):
         r"""
         Set attack mode as targeted.
-
         Arguments:
             target_map_function (function): Label mapping function.
                 e.g. lambda inputs, labels:(labels+1)%10.
                 None for using input labels as targeted labels. (Default)
             quiet (bool): Display information message or not. (Default: False)
-
         """
         self._set_mode_targeted("targeted(custom)", quiet)
         self._target_map_function = target_map_function
@@ -484,7 +481,7 @@ class Attack(object):
 
     @torch.no_grad()
     def get_random_target_label(self, inputs, labels=None):
-        outputs = self.get_output_with_eval_nograd(inputs)
+        outputs, relu_feats = self.get_output_with_eval_nograd(inputs)
         if labels is None:
             _, labels = torch.max(outputs, dim=1)
         n_classses = outputs.shape[-1]

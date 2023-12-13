@@ -116,24 +116,20 @@ class CW_RBF(Attack):
             else:
                 # If the attack is not targeted we simply make these two values unequal
                 condition = (pre != labels).float()
-                #print("Condition", condition)
+
             # Filter out images that get either correct predictions or non-decreasing loss,
             # i.e., only images that are both misclassified and loss-decreasing are left
             
             mask = condition * (best_L2 > current_L2.detach())
-            #print("Best l2", best_L2)
-            #print("current l2,", current_L2)
+
             best_L2 = mask * current_L2.detach() + (1 - mask) * best_L2
             mask = mask.view([-1] + [1] * (dim - 1))
-            #print("Mask", mask)
             best_adv_images = mask * adv_images.detach() + (1 - mask) * best_adv_images
 
             # Early stop when loss does not converge.
             # max(.,1) To prevent MODULO BY ZERO error in the next step.
             if step % max(self.steps // 10, 1) == 0:
                 if cost.item() > prev_cost:
-                    #print("adv image", adv_images)
-                    print("Relu feats", relu_feats)
                     best_adv_images = best_adv_images.detach().cpu()
                     adv_images = adv_images.detach().cpu()
                     #return best_adv_images, images.detach().cpu()
