@@ -52,33 +52,13 @@ import hashlib
 import logging
 import torch.backends.cudnn as cudnn
 
-# Set seets
+# Set seeds
 np.random.seed(args.seed)
 random.seed(args.seed)
 torch.manual_seed(args.seed)
 cudnn.deterministic = True
 cudnn.benchmark = False
 
-"""
-def load_data(path, label):
-    with open(path, 'rb') as iffile:
-        features = pickle.load(iffile)
-    layer = 'view'
-    features = features[layer]
-    features_matrix = None
-
-    for i in range(len(features)):
-        if isinstance(features_matrix, torch.Tensor):
-            features_matrix = torch.cat((features_matrix, features[i]))
-        else:
-            features_matrix = features[i]
-
-    features = None    
-    features_matrix = torch.flatten(features_matrix, start_dim=1, end_dim=-1)
-    y = np.empty(features_matrix.shape[0])
-    y.fill(label)
-    return [features_matrix, y]
-"""
 
 def load_data(path, label):
     features_matrix = torch.load(path)
@@ -181,27 +161,12 @@ if args.train:
         test_adversarial = quantize(test_adversarial)
 
 
-
-
-    min_train = min(train_benign[0].shape[0], train_adversarial[0].shape[0])
-    min_test = min(test_benign[0].shape[0], test_adversarial[0].shape[0])
-    # Subsample the larger sets
-    rand_indices = np.random.choice(train_benign[0].shape[0], size=min_train, replace=False)
-    train_benign[0] = train_benign[0][rand_indices] 
-    train_benign[1] = train_benign[1][rand_indices]
-
-    rand_indices = np.random.choice(test_benign[0].shape[0], size=min_test, replace=False)
-    test_benign[0] = test_benign[0][rand_indices] 
-    test_benign[1] = test_benign[1][rand_indices]
-
     X_train, y_train = unison_shuffled_copies(train_benign[0], train_benign[1], train_adversarial[0], train_adversarial[1])
 
     X_test, y_test = unison_shuffled_copies(test_benign[0], test_benign[1], test_adversarial[0], test_adversarial[1])
 
-    if args.detector_type == 'Regular':
-        clf = SVC(C=args.C, gamma=args.gamma)
-    elif args.detector_type == 'Quantized':
-        clf = SVC(C=args.C, gamma=args.gamma)
+
+    clf = SVC(C=args.C, gamma=args.gamma)
 
     clf.fit(X_train, y_train)
 
@@ -261,11 +226,10 @@ else:
     if args.test_type == 'benign':
         logging_path = os.path.join(expr_dir,f"test_rbf_integrated_type-{args.test_type}-detector-type-{args.detector_type}.log")
         _,__,test_path,____ = get_paths(expr_dir)
-        print("Test path is ", test_path)
         test_data = load_data(test_path, 1)
 
     elif args.test_type == 'adversarial':
-        print("testing adversarial")
+
         logging_path = os.path.join(expr_dir,f"test_rbf_integrated_type-{args.test_type}-detector-type-{args.detector_type}.log")
         _,__,___,test_path = get_paths(expr_dir)
         test_data = load_data(test_path, -1)
@@ -290,7 +254,6 @@ else:
     # Loading svm
     rbf_config = f"RBF_{args.attack}_{args.total_train_samples}_{args.detector_type}.pkl"
     rbf_path = os.path.join(expr_dir, "RBF", rbf_config)
-    print("Rbf path is ", rbf_path)
     with open(rbf_path,'rb') as in_model:
         clf = pickle.load(in_model)
 
@@ -299,5 +262,18 @@ else:
     acc = len(np.where(x_pred == y)[0]) / len(X)
     logger.critical(f"Acc : {acc}")
     print("Accuracy : ", acc)
+
+    x_pred_scores = clf.decision_function(X)
+
+    predictions = {}
+    predictions['true_labels'] = y
+    predictions['pred_labels'] = x_pred
+    predictions['pred_scores'] = x_pred_scores
+    # Save RBF preds
+    preds_config = f"Predictions/RBF/{args.attack}_type-{args.test_type}_{args.total_attack_samples}_test_detector-type-{args.detector_type}_integrated-{args.integrated}_rbf.pickle"
+    preds_path = os.path.join(expr_dir, preds_config)
+    with open(preds_path, 'wb') as o_file:
+        pickle.dump(predictions, o_file)
+
     print("RBF tested...")
 

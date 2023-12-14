@@ -1,6 +1,6 @@
 CREATE_ROOT=false
 TRAIN_MT_BASELINE=false
-RUN_ATTACK=false
+RUN_ATTACK=true
 TEST_ADVERSARIAL=true
 FEATURE_EXTRACTION_BENIGN=false
 FEATURE_EXTRACTION_ADVERSARIAL=false
@@ -21,7 +21,7 @@ home_dir=/home/zsarwar/Projects/SparseDNNs
 gpu=1
 seed=42
 attack="CW"
-detector_type="Quantized" # Regular
+detector_type="Regular" # Regular Quantized
 
 C=0.7
 gamma=0.075
@@ -139,12 +139,12 @@ RUN_ATTACK_TEST=true
 
 # Attack parameters
 original_dataset=cifar10
-c=0.01
-steps=500
+c=0.02
+steps=200
 lr=0.01
-batch_size=512
-total_attack_samples_train=512
-total_attack_samples_test=512
+batch_size=256
+total_attack_samples_train=256
+total_attack_samples_test=256
 attack_split='train'
 integrated=False
 
@@ -211,6 +211,7 @@ fi
 
 TEST_MT_ADVERSARIAL_TRAIN=false
 TEST_MT_ADVERSARIAL_TEST=true
+TEST_MT_BENIGN_TEST=true
 test_type=adversarial
 if [ "$TEST_ADVERSARIAL" = true ]
 then
@@ -289,7 +290,47 @@ then
         --total_attack_samples=$total_attack_samples_test \
         --integrated=$integrated \
         --attack=$attack
+        
     fi
+
+    test_type=benign
+    if [ "$TEST_MT_BENIGN_TEST" = true ]
+    then
+        cd ${home_dir}
+        python3 test.py \
+        --gpu=$gpu \
+        --base_dir=$base_dir \
+        --root_hash_config=$root_hash_config \
+        --mt_hash_config=$mt_hash_config \
+        --epochs=$epochs \
+        --num_eval_epochs=$num_eval_epochs \
+        --arch=$model \
+        --batch_size=$batch_size \
+        --lr=$lr \
+        --weight_decay=$weight_decay \
+        --lr_warmup_epochs=$lr_warmup_epochs \
+        --lr_warmup_decay=$lr_warmup_decay \
+        --label_smoothing=$label_smoothing \
+        --mixup_alpha=$mixup_alpha \
+        --cutmix_alpha=$cutmix_alpha \
+        --random_erasing=$random_erasing \
+        --model_ema=False \
+        --pretrained=$pretrained \
+        --freeze_layers=$freeze_layers \
+        --seed=$seed \
+        --num_classes=$num_classes \
+        --original_dataset=$original_dataset \
+        --original_config=$original_config \
+        --trainer_type=$trainer_type \
+        --new_classifier=$new_classifier \
+        --test_type=$test_type \
+        --attack_split=$attack_split \
+        --detector_type=$detector_type \
+        --total_attack_samples=$total_attack_samples_test \
+        --integrated=$integrated \
+        --attack=$attack    
+    fi
+    
 fi
 
 #############################################################################################
@@ -502,7 +543,9 @@ then
     --detector_type=$detector_type \
     --total_attack_samples=$total_attack_samples_test \
     --total_train_samples=$total_attack_samples_train \
-    --train=$train
+    --train=$train \
+    --C=$C \
+    --gamma=$gamma
 fi
 
 
@@ -519,8 +562,18 @@ fi
 # Attack parameters
 
 original_dataset=cifar10
+
 c=0.02
-d=0.3
+d=0.02
+
+
+if [ "$detector_type" = 'Quantized' ]
+then
+    c=0.00000000000000000000000000000000000000000000000000000000000000000000000000000005
+    d=2
+
+fi
+
 steps=500
 lr=0.01
 batch_size=128
@@ -531,7 +584,7 @@ total_attack_samples_test=5120
 # Get baseline performance of samples to be attacked
 total_attack_samples=$total_attack_samples_train
 integrated=False
-test_type=benign
+test_type=adversarial
 attack_split='test'
 extract_split=$attack_split
 extract_type=$test_type

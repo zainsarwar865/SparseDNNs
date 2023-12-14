@@ -41,7 +41,7 @@ class CW(Attack):
         self.steps = steps
         self.lr = lr
         self.supported_mode = ["default", "targeted"]
-        self.set_mode_targeted_random()
+        #self.set_mode_targeted_random()
 
     def forward(self, images, labels):
         r"""

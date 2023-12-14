@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.optim as optim
 import sys
 from ..attack_rbf_included import Attack
+from torch.optim.lr_scheduler import CosineAnnealingLR
 
 import torch
 class BinarizeWithSigmoidGradient(torch.autograd.Function):
@@ -92,6 +93,11 @@ class CW_RBF(Attack):
 
         optimizer = optim.Adam([w], lr=self.lr)
 
+        scheduler = CosineAnnealingLR(
+            optimizer, T_max=self.steps
+        )
+
+
         for step in range(self.steps):
             print("On step : ", step)
             # Get adversarial images
@@ -127,6 +133,7 @@ class CW_RBF(Attack):
             optimizer.zero_grad()
             cost.backward()
             optimizer.step()
+            scheduler.step()
 
             # Update adversarial images
             pre = torch.argmax(outputs.detach(), 1)
@@ -150,16 +157,16 @@ class CW_RBF(Attack):
 
             # Early stop when loss does not converge.
             # max(.,1) To prevent MODULO BY ZERO error in the next step.
-            if step % max(self.steps // 10, 1) == 0:
-                if cost.item() > prev_cost:
-                    best_adv_images = best_adv_images.detach().cpu()
-                    adv_images = adv_images.detach().cpu()
-                    return adv_images, images.detach().cpu()
-                prev_cost = cost.item()
+            #if step % max(self.steps // 10, 1) == 0:
+                #if cost.item() > prev_cost:
+                    #best_adv_images = best_adv_images.detach().cpu()
+                    #adv_images = adv_images.detach().cpu()
+                    #return best_adv_images, images.detach().cpu()
+                #prev_cost = cost.item()
         best_adv_images = best_adv_images.detach().cpu()
         adv_images = adv_images.detach().cpu()
        
-        return adv_images, images.detach().cpu()
+        return best_adv_images, images.detach().cpu()
 
     def tanh_space(self, x):
         return 1 / 2 * (torch.tanh(x) + 1)

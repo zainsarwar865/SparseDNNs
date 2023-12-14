@@ -1,14 +1,14 @@
 CREATE_ROOT=false
 TRAIN_MT_BASELINE=false
-RUN_ATTACK=true
-TEST_ADVERSARIAL=false
+RUN_ATTACK=false
+TEST=false
 FEATURE_EXTRACTION_BENIGN=false
 FEATURE_EXTRACTION_ADVERSARIAL=false
 TRAIN_RBF=false
 
 TEST_MT_INTEGRATED_PREATTACK=false
-RUN_ATTACK_INTEGRATED=false
-TEST_INTEGRATED_ADVERSARIAL=false
+RUN_ATTACK_INTEGRATED=true
+TEST_INTEGRATED_ADVERSARIAL=true
 
 #echo $y
 BashName=${0##*/}
@@ -23,8 +23,8 @@ seed=42
 attack="CW"
 detector_type="Quantized" # Regular
 
-C=0.99
-gamma=0.99
+C=0.9
+gamma=0.9
 
 
 if [ "$detector_type" = 'Quantized' ]
@@ -133,15 +133,15 @@ fi
 #############################################################################################
 # Attack parameters
 
-RUN_ATTACK_TRAIN=false
+RUN_ATTACK_TRAIN=true
 RUN_ATTACK_TEST=true
 
 # Attack parameters
 original_dataset=cifar10
-c=0.06
+c=0.1
 steps=200
 lr=0.01
-batch_size=512
+batch_size=256
 total_attack_samples_train=5120
 total_attack_samples_test=5120
 attack_split='train'
@@ -154,7 +154,7 @@ then
     if [ "$RUN_ATTACK_TRAIN" = true ]
     then
         cd ${home_dir}
-        python3 attack_filtered.py \
+        python3 attack.py \
         --gpu=$gpu \
         --base_dir=$base_dir \
         --root_hash_config=$root_hash_config \
@@ -180,9 +180,8 @@ then
 
     if [ "$RUN_ATTACK_TEST" = true ]
     then
-        
         cd ${home_dir}
-        python3 attack_filtered.py \
+        python3 attack.py \
         --gpu=$gpu \
         --base_dir=$base_dir \
         --root_hash_config=$root_hash_config \
@@ -209,13 +208,14 @@ fi
 #############################################################################################
 # Test adversarial samples on the model
 
-TEST_MT_ADVERSARIAL_TRAIN=false
-TEST_MT_ADVERSARIAL_TEST=true
+TEST_ADVERSARIAL_TRAIN=false
+TEST_ADVERSARIAL_TEST=true
+TEST_BENIGN_TEST=true
 test_type=adversarial
-if [ "$TEST_ADVERSARIAL" = true ]
+if [ "$TEST" = true ]
 then
     attack_split='train'
-    if [ "$TEST_MT_ADVERSARIAL_TRAIN" = true ]
+    if [ "$TEST_ADVERSARIAL_TRAIN" = true ]
     then
         cd ${home_dir}
         python3 test.py \
@@ -254,7 +254,44 @@ then
     fi
 
     attack_split='test'
-    if [ "$TEST_MT_ADVERSARIAL_TEST" = true ]
+    if [ "$TEST_ADVERSARIAL_TEST" = true ]
+    then
+        cd ${home_dir}
+        python3 test.py \
+        --gpu=$gpu \
+        --base_dir=$base_dir \
+        --root_hash_config=$root_hash_config \
+        --mt_hash_config=$mt_hash_config \
+        --epochs=$epochs \
+        --num_eval_epochs=$num_eval_epochs \
+        --arch=$model \
+        --batch_size=$batch_size \
+        --lr=$lr \
+        --weight_decay=$weight_decay \
+        --lr_warmup_epochs=$lr_warmup_epochs \
+        --lr_warmup_decay=$lr_warmup_decay \
+        --label_smoothing=$label_smoothing \
+        --mixup_alpha=$mixup_alpha \
+        --cutmix_alpha=$cutmix_alpha \
+        --random_erasing=$random_erasing \
+        --model_ema=False \
+        --pretrained=$pretrained \
+        --freeze_layers=$freeze_layers \
+        --seed=$seed \
+        --num_classes=$num_classes \
+        --original_dataset=$original_dataset \
+        --original_config=$original_config \
+        --trainer_type=$trainer_type \
+        --new_classifier=$new_classifier \
+        --test_type=$test_type \
+        --attack_split=$attack_split \
+        --detector_type=$detector_type \
+        --total_attack_samples=$total_attack_samples_test \
+        --integrated=$integrated \
+        --attack=$attack
+    fi
+    test_type=benign
+    if [ "$TEST_BENIGN_TEST" = true ]
     then
         cd ${home_dir}
         python3 test.py \
@@ -509,12 +546,6 @@ then
 fi
 
 
-
-
-
-
-
-
 #############################################################################################
 # Start integrated attack
 
@@ -522,19 +553,28 @@ fi
 # Attack parameters
 
 original_dataset=cifar10
-c=0.06
-d=2
-steps=500
-lr=0.01
+c=0.09
+d=0.005
+
+# Quantized
+if [ "$detector_type" = 'Quantized' ]
+then
+    c=0.0015
+    d=2
+
+fi
+
+steps=200
+lr=0.1
 batch_size=256
-total_attack_samples_test=512
+total_attack_samples_test=5120
 
 
 #############################################################################################
 # Get baseline performance of samples to be attacked
 total_attack_samples=$total_attack_samples_train
 integrated=False
-test_type=adversarial
+test_type=benign
 attack_split='test'
 extract_split=$attack_split
 extract_type=$test_type
@@ -630,6 +670,100 @@ train=False
         --integrated=$integrated \
         --detector_type=$detector_type
 
+
+        test_type=adversarial
+
+        cd ${home_dir}
+        python3 test.py \
+        --gpu=$gpu \
+        --base_dir=$base_dir \
+        --root_hash_config=$root_hash_config \
+        --mt_hash_config=$mt_hash_config \
+        --epochs=$epochs \
+        --num_eval_epochs=$num_eval_epochs \
+        --arch=$model \
+        --batch_size=$batch_size \
+        --lr=$lr \
+        --weight_decay=$weight_decay \
+        --lr_warmup_epochs=$lr_warmup_epochs \
+        --lr_warmup_decay=$lr_warmup_decay \
+        --label_smoothing=$label_smoothing \
+        --mixup_alpha=$mixup_alpha \
+        --cutmix_alpha=$cutmix_alpha \
+        --random_erasing=$random_erasing \
+        --model_ema=False \
+        --pretrained=$pretrained \
+        --freeze_layers=$freeze_layers \
+        --seed=$seed \
+        --num_classes=$num_classes \
+        --original_dataset=$original_dataset \
+        --original_config=$original_config \
+        --trainer_type=$trainer_type \
+        --new_classifier=$new_classifier \
+        --test_type=$test_type \
+        --attack_split=$attack_split \
+        --detector_type=$detector_type \
+        --total_attack_samples=$total_attack_samples_test \
+        --integrated=$integrated \
+        --attack=$attack
+    
+    
+        cd ${home_dir}
+        python3 feature_extraction.py \
+        --gpu=$gpu \
+        --base_dir=$base_dir \
+        --root_hash_config=$root_hash_config \
+        --mt_hash_config=$mt_hash_config \
+        --epochs=$epochs \
+        --num_eval_epochs=$num_eval_epochs \
+        --arch=$model \
+        --batch_size=$batch_size \
+        --lr=$lr \
+        --weight_decay=$weight_decay \
+        --lr_warmup_epochs=$lr_warmup_epochs \
+        --lr_warmup_decay=$lr_warmup_decay \
+        --label_smoothing=$label_smoothing \
+        --mixup_alpha=$mixup_alpha \
+        --cutmix_alpha=$cutmix_alpha \
+        --random_erasing=$random_erasing \
+        --model_ema=False \
+        --resume=$resume \
+        --pretrained=$pretrained \
+        --freeze_layers=$freeze_layers \
+        --seed=$seed \
+        --num_classes=$num_classes \
+        --new_classifier=$new_classifier \
+        --test_per_class=$test_per_class \
+        --original_dataset=$original_dataset \
+        --original_config=$original_config \
+        --trainer_type=$trainer_type \
+        --extract_type=$extract_type \
+        --extract_split=$extract_split \
+        --detector_type=$detector_type \
+        --total_attack_samples=$total_attack_samples_test \
+        --integrated=$integrated \
+        --attack=$attack
+
+        # Test RBF Kernel
+        train='False'
+        cd ${home_dir}
+        python3 rbf.py \
+        --gpu=$gpu \
+        --base_dir=$base_dir \
+        --root_hash_config=$root_hash_config \
+        --mt_hash_config=$mt_hash_config \
+        --seed=$seed \
+        --attack=$attack \
+        --trainer_type=$trainer_type \
+        --total_attack_samples=$total_attack_samples_test \
+        --total_train_samples=$total_attack_samples \
+        --train=$train \
+        --test_type=$test_type \
+        --integrated=$integrated \
+        --detector_type=$detector_type
+
+
+
     fi
 
 
@@ -646,7 +780,7 @@ extract_type=$test_type
 if [ "$RUN_ATTACK_INTEGRATED" = true ]
 then
     cd ${home_dir}
-    python3 attack_filtered.py \
+    python3 attack.py \
     --gpu=$gpu \
     --base_dir=$base_dir \
     --root_hash_config=$root_hash_config \

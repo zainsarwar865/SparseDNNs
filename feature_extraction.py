@@ -1,48 +1,5 @@
 import argparse
 import os
-import random
-import shutil
-import time
-import warnings
-from enum import Enum
-import yaml
-import pickle
-import numpy as np
-import pandas as pd
-from glob import glob
-import torch
-import torch.backends.cudnn as cudnn
-import torch.distributed as dist
-import torch.multiprocessing as mp
-import torch.nn as nn
-import torch.nn.parallel
-import torch.optim
-import torch.utils.data
-import torch.utils.data.distributed
-import torchvision.datasets as datasets
-import torchvision
-import torchvision.models as models
-from torchvision.models import resnet50, ResNet50_Weights, ResNet18_Weights
-from utils.resnet import resnet18
-import torchvision.transforms as transforms
-from torch.optim.lr_scheduler import StepLR, CosineAnnealingLR, LinearLR, SequentialLR
-from torch.utils.data import Subset
-from utils.dataset import CustomImageDataset, CustomImageDataset_Adv
-import hashlib
-from sklearn.metrics import f1_score
-import logging
-from collections import Counter
-from utils.transforms import get_mixup_cutmix
-from torch.utils.data.dataloader import default_collate
-import utils.utils as utils
-import utils.configs as configs
-from torchvision.models.feature_extraction import create_feature_extractor
-from collections import defaultdict
-from utils.wide_resnet import WideResNet
-
-model_names = sorted(name for name in models.__dict__
-    if name.islower() and not name.startswith("__")
-    and callable(models.__dict__[name]))
 
 parser = argparse.ArgumentParser(description='PyTorch Training')
 parser.add_argument('--root_hash_config', type=str)
@@ -92,6 +49,82 @@ parser.add_argument('--attack', type=str)
 parser.add_argument('--integrated', type=str)
 
 args = parser.parse_args()
+os.environ['CUDA_VISIBLE_DEVICES'] = str(args.gpu)
+args.gpu=0
+device="cuda:0" 
+
+
+import random
+import shutil
+import time
+import warnings
+from enum import Enum
+import yaml
+import pickle
+import numpy as np
+import pandas as pd
+from glob import glob
+import torch
+import torch.backends.cudnn as cudnn
+import torch.distributed as dist
+import torch.multiprocessing as mp
+import torch.nn as nn
+import torch.nn.parallel
+import torch.optim
+import torch.utils.data
+import torch.utils.data.distributed
+import torchvision.datasets as datasets
+import torchvision
+import torchvision.models as models
+from torchvision.models import resnet50, ResNet50_Weights, ResNet18_Weights
+from utils.resnet import resnet18
+import torchvision.transforms as transforms
+from torch.optim.lr_scheduler import StepLR, CosineAnnealingLR, LinearLR, SequentialLR
+from torch.utils.data import Subset
+from utils.dataset import CustomImageDataset, CustomImageDataset_Adv
+import hashlib
+from sklearn.metrics import f1_score
+import logging
+from collections import Counter
+from utils.transforms import get_mixup_cutmix
+from torch.utils.data.dataloader import default_collate
+import utils.utils as utils
+import utils.configs as configs
+from torchvision.models.feature_extraction import create_feature_extractor
+from collections import defaultdict
+from utils.wide_resnet import WideResNet
+
+model_names = sorted(name for name in models.__dict__
+    if name.islower() and not name.startswith("__")
+    and callable(models.__dict__[name]))
+
+
+def run_validate(model, loader, base_progress=0):
+    all_masks = None
+    with torch.no_grad():
+        end = time.time()
+        for i, (images, target) in enumerate(loader):
+            i = base_progress + i
+            if args.gpu is not None and torch.cuda.is_available():
+                images = images.cuda(device, non_blocking=True)
+            if torch.cuda.is_available():
+                target = target.cuda(device, non_blocking=True)
+            # compute output
+            output, relu_feats = model(images)
+            # measure accuracy and record loss
+            _, pred = output.topk(1, largest=True)
+            pred = pred.t()
+            correct = pred.eq(target[None])
+            if isinstance(all_masks, torch.Tensor):
+                all_masks = torch.cat((all_masks, correct), dim=1)
+            else:
+                all_masks = correct
+    return all_masks
+
+
+
+
+
 print("Starting feature extraction...")
 # Handle bash boolean variables
 if args.pretrained == "True":
@@ -205,6 +238,7 @@ def main():
         torch.manual_seed(args.seed)
         cudnn.deterministic = True
         cudnn.benchmark = False
+        np.random.seed(args.seed)
 
         
     args.distributed = args.multiprocessing_distributed
@@ -253,27 +287,28 @@ def main_worker(gpu, ngpus_per_node, args):
             if args.arch == 'resnet18':
                model.fc = nn.Linear(in_features=512, out_features=args.num_classes, bias=True)
 
+            if args.arch != 'wideresnet':
             # Loading the best checkpoint
-            best_ckpt_name = "model_best.pth.tar"
-            best_ckpt_path = os.path.join(ckpt_dir, best_ckpt_name)
-            logger.critical(best_ckpt_path)
-            logger.critical("Testing after training")
-            if args.gpu is None:
-                checkpoint = torch.load(best_ckpt_path, map_location=loc)
-            elif torch.cuda.is_available():
-                # Map model to be loaded to specified single gpu.
-                loc = 'cuda:{}'.format(args.gpu)
-                # Load best checkpoint
-                checkpoint = torch.load(best_ckpt_path, map_location=loc)
-            best_epoch = checkpoint['epoch']
-            best_acc1 = checkpoint['best_acc1']
-            best_acc1 = torch.tensor(best_acc1)
-            if args.gpu is not None:
-            # best_acc1 may be from a checkpoint from a different GPU
-                best_acc1 = best_acc1.to(args.gpu)
-            model.load_state_dict(checkpoint['state_dict'])
-            #optimizer.load_state_dict(checkpoint['optimizer'])
-            logger.critical(f"=> loaded checkpoint '{best_ckpt_path}' (epoch {best_epoch})")
+                best_ckpt_name = "model_best.pth.tar"
+                best_ckpt_path = os.path.join(ckpt_dir, best_ckpt_name)
+                logger.critical(best_ckpt_path)
+                logger.critical("Testing after training")
+                if args.gpu is None:
+                    checkpoint = torch.load(best_ckpt_path, map_location=loc)
+                elif torch.cuda.is_available():
+                    # Map model to be loaded to specified single gpu.
+                    loc = 'cuda:{}'.format(args.gpu)
+                    # Load best checkpoint
+                    checkpoint = torch.load(best_ckpt_path, map_location=loc)
+                best_epoch = checkpoint['epoch']
+                best_acc1 = checkpoint['best_acc1']
+                best_acc1 = torch.tensor(best_acc1)
+                if args.gpu is not None:
+                # best_acc1 may be from a checkpoint from a different GPU
+                    best_acc1 = best_acc1.to(args.gpu)
+                model.load_state_dict(checkpoint['state_dict'])
+                #optimizer.load_state_dict(checkpoint['optimizer'])
+                logger.critical(f"=> loaded checkpoint '{best_ckpt_path}' (epoch {best_epoch})")
 
 
     else:
@@ -292,34 +327,34 @@ def main_worker(gpu, ngpus_per_node, args):
             model = resnet18()
         else:
             model = models.__dict__[args.arch]()
-            print("Now and then...")
         if args.new_classifier:
             if args.arch == 'resnet50':
                 model.fc = nn.Linear(in_features=2048, out_features=args.num_classes, bias=True)
             if args.arch == 'resnet18':
                 model.fc = nn.Linear(in_features=512, out_features=args.num_classes, bias=True)
 
-            best_ckpt_name = "model_best.pth.tar"
-            best_ckpt_path = os.path.join(ckpt_dir, best_ckpt_name)
-            logger.critical(best_ckpt_path)
-            logger.critical("Testing after training")
-            if args.gpu is None:
-                checkpoint = torch.load(best_ckpt_path, map_location=loc)
-            elif torch.cuda.is_available():
-                # Map model to be loaded to specified single gpu.
-                loc = 'cuda:{}'.format(args.gpu)
-                # Load best checkpoint
-                checkpoint = torch.load(best_ckpt_path, map_location=loc)
-            best_epoch = checkpoint['epoch']
-            best_acc1 = checkpoint['best_acc1']
-            best_acc1 = torch.tensor(best_acc1)
-            if args.gpu is not None:
-            # best_acc1 may be from a checkpoint from a different GPU
-                best_acc1 = best_acc1.to(args.gpu)
-            model.load_state_dict(checkpoint['state_dict'])
-            #optimizer.load_state_dict(checkpoint['optimizer'])
-            #scheduler.load_state_dict(checkpoint['scheduler'])
-            logger.critical(f"=> loaded checkpoint '{best_ckpt_path}' (epoch {best_epoch})")
+            if args.arch != 'wideresnet':
+                best_ckpt_name = "model_best.pth.tar"
+                best_ckpt_path = os.path.join(ckpt_dir, best_ckpt_name)
+                logger.critical(best_ckpt_path)
+                logger.critical("Testing after training")
+                if args.gpu is None:
+                    checkpoint = torch.load(best_ckpt_path, map_location=loc)
+                elif torch.cuda.is_available():
+                    # Map model to be loaded to specified single gpu.
+                    loc = 'cuda:{}'.format(args.gpu)
+                    # Load best checkpoint
+                    checkpoint = torch.load(best_ckpt_path, map_location=loc)
+                best_epoch = checkpoint['epoch']
+                best_acc1 = checkpoint['best_acc1']
+                best_acc1 = torch.tensor(best_acc1)
+                if args.gpu is not None:
+                # best_acc1 may be from a checkpoint from a different GPU
+                    best_acc1 = best_acc1.to(args.gpu)
+                model.load_state_dict(checkpoint['state_dict'])
+                #optimizer.load_state_dict(checkpoint['optimizer'])
+                #scheduler.load_state_dict(checkpoint['scheduler'])
+                logger.critical(f"=> loaded checkpoint '{best_ckpt_path}' (epoch {best_epoch})")
 
 
     # Add option to freeze/unfreeze more layers
@@ -438,11 +473,19 @@ def main_worker(gpu, ngpus_per_node, args):
                                                     download=False, transform=transform_test)
             random_indices = np.random.randint(low=0, high = len(trainset), size=(args.total_attack_samples))
             trainset = Subset(trainset, indices=random_indices)
+            ########################################################################
+            # Filter out incorrectly classified samples
+            model = model.eval()
+            train_loader = torch.utils.data.DataLoader(trainset, batch_size=args.batch_size,
+                                                    shuffle=False, num_workers=args.workers)
+            mask = run_validate(model,train_loader)
+            good_indices = torch.where(mask == True)[1].tolist()
+            # Create new subsets
+            trainset = Subset(trainset, indices=good_indices)      
+            ########################################################################
 
         elif args.extract_type == 'adversarial':
-            # Load adversarial dataset
-            
-            
+            # Load adversarial dataset            
             adv_dataset_config = f"Adversarial_Datasets/{args.attack}_adv_samples_{args.total_attack_samples}_{args.extract_split}_detector-type-{args.detector_type}_integrated-{args.integrated}.pickle"
             
             adv_dataset_path = os.path.join(expr_dir, adv_dataset_config)
@@ -460,6 +503,17 @@ def main_worker(gpu, ngpus_per_node, args):
             random_indices = np.random.randint(low=0, high = len(valset), size=(args.total_attack_samples))
             valset = Subset(valset, indices=random_indices)
 
+            ########################################################################
+            # Filter out incorrectly classified samples
+            model = model.eval()
+            val_loader = torch.utils.data.DataLoader(valset, batch_size=args.batch_size,
+                                                    shuffle=False, num_workers=args.workers)
+            mask = run_validate(model,val_loader)
+            good_indices = torch.where(mask == True)[1].tolist()
+            # Create new subsets
+            valset = Subset(valset, indices=good_indices)        
+            ########################################################################
+
         elif args.extract_type == 'adversarial':
             # Load adversarial dataset
             adv_dataset_config = f"Adversarial_Datasets/{args.attack}_adv_samples_{args.total_attack_samples}_{args.extract_split}_detector-type-{args.detector_type}_integrated-{args.integrated}.pickle"
@@ -472,7 +526,6 @@ def main_worker(gpu, ngpus_per_node, args):
         val_loader = torch.utils.data.DataLoader(valset, batch_size=args.batch_size,
                                                 shuffle=False, num_workers=args.workers)
     
-
     # Test after training
     if args.extract_split == 'train':
         extract_features(train_loader, model, args)
@@ -616,19 +669,11 @@ def extract_features(val_loader, model, args):
                     target = target.cuda(args.gpu, non_blocking=True)
                 # compute output
                 output, relu_feats = model(images) 
-                """
-                for k in output.keys():
-                    t_k = output[k].cpu()
-                    features[k].append(t_k)
-                """
                 if isinstance(features, torch.Tensor):
                     features = torch.concat((features, relu_feats.detach().cpu()),dim=0)
                 else:
                     features = relu_feats.detach().cpu()
-            """
-            with open(relu_dict_path, 'wb') as o_file:
-                pickle.dump(features, o_file)
-            """
+
             torch.save(features, relu_dict_path)
 
 

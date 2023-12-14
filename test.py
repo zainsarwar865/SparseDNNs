@@ -1,48 +1,5 @@
 import argparse
 import os
-import random
-import shutil
-import time
-import warnings
-from enum import Enum
-import yaml
-import pickle
-import numpy as np
-import pandas as pd
-from glob import glob
-import torch
-import torch.backends.cudnn as cudnn
-import torch.distributed as dist
-import torch.multiprocessing as mp
-import torch.nn as nn
-import torch.nn.parallel
-import torch.optim
-import torch.utils.data
-import torch.utils.data.distributed
-import torchvision.datasets as datasets
-import torchvision
-import torchvision.models as models
-from torchvision.models import resnet50, ResNet50_Weights, ResNet18_Weights
-from utils.resnet import resnet18
-import torchvision.transforms as transforms
-from torch.optim.lr_scheduler import StepLR, CosineAnnealingLR, LinearLR, SequentialLR
-from torch.utils.data import Subset
-from utils.dataset import CustomImageDataset, CustomImageDataset_Adv
-import hashlib
-from sklearn.metrics import f1_score
-import logging
-from collections import Counter
-from utils.transforms import get_mixup_cutmix
-from torch.utils.data.dataloader import default_collate
-import utils.utils as utils
-import utils.configs as configs
-from utils.wide_resnet import WideResNet
-#from torchvision.models.feature_extraction import create_feature_extractor
-
-
-model_names = sorted(name for name in models.__dict__
-    if name.islower() and not name.startswith("__")
-    and callable(models.__dict__[name]))
 
 parser = argparse.ArgumentParser(description='PyTorch Training')
 parser.add_argument('--root_hash_config', type=str)
@@ -91,6 +48,83 @@ parser.add_argument('--total_attack_samples', type=int)
 
 
 args = parser.parse_args()
+
+
+
+os.environ['CUDA_VISIBLE_DEVICES'] = str(args.gpu)
+args.gpu=0
+device="cuda:0"
+
+import random
+import shutil
+import time
+import warnings
+from enum import Enum
+import yaml
+import pickle
+import numpy as np
+import pandas as pd
+from glob import glob
+import torch
+import torch.backends.cudnn as cudnn
+import torch.distributed as dist
+import torch.multiprocessing as mp
+import torch.nn as nn
+import torch.nn.parallel
+import torch.optim
+import torch.utils.data
+from torch.utils.data import DataLoader
+import torch.utils.data.distributed
+import torchvision.datasets as datasets
+import torchvision
+import torchvision.models as models
+from torchvision.models import resnet50, ResNet50_Weights, ResNet18_Weights
+from utils.resnet import resnet18
+import torchvision.transforms as transforms
+from torch.optim.lr_scheduler import StepLR, CosineAnnealingLR, LinearLR, SequentialLR
+from torch.utils.data import Subset
+from utils.dataset import CustomImageDataset, CustomImageDataset_Adv
+import hashlib
+from sklearn.metrics import f1_score
+import logging
+from collections import Counter
+from utils.transforms import get_mixup_cutmix
+from torch.utils.data.dataloader import default_collate
+import utils.utils as utils
+import utils.configs as configs
+from utils.wide_resnet import WideResNet
+#from torchvision.models.feature_extraction import create_feature_extractor
+
+
+model_names = sorted(name for name in models.__dict__
+    if name.islower() and not name.startswith("__")
+    and callable(models.__dict__[name]))
+
+
+
+
+def filter_samples(model, loader, base_progress=0):
+    all_masks = None
+    with torch.no_grad():
+        end = time.time()
+        for i, (images, target) in enumerate(loader):
+            i = base_progress + i
+            if args.gpu is not None and torch.cuda.is_available():
+                images = images.cuda(device, non_blocking=True)
+            if torch.cuda.is_available():
+                target = target.cuda(device, non_blocking=True)
+            # compute output
+            output, relu_feats = model(images)
+            # measure accuracy and record loss
+            _, pred = output.topk(1, largest=True)
+            pred = pred.t()
+            correct = pred.eq(target[None])
+            if isinstance(all_masks, torch.Tensor):
+                all_masks = torch.cat((all_masks, correct), dim=1)
+            else:
+                all_masks = correct
+    return all_masks
+
 
 # Handle bash boolean variables
 
@@ -218,13 +252,7 @@ def main_worker(gpu, ngpus_per_node, args):
         logger.critical(f"=> using pre-trained model {args.arch}")
         if args.arch == 'wideresnet':
             # Load model
-            ###################################################################
             model = WideResNet()
-            model_path = "/home/zsarwar/Projects/SparseDNNs/adversarial-attacks-pytorch/demo/models/cifar10/L2/Standard.pt"
-            checkpoint = torch.load(model_path, map_location=torch.device('cuda:0'))
-            state_dict = checkpoint['state_dict']
-            model.load_state_dict(state_dict)
-            ###################################################################
         elif args.arch == 'resnet18':
             #model = models.__dict__[args.arch](weights=ResNet18_Weights.IMAGENET1K_V2)
             model = resnet18()
@@ -239,50 +267,38 @@ def main_worker(gpu, ngpus_per_node, args):
     else:
         logger.critical(f"=> creating model {args.arch}")
         if args.arch == 'wideresnet':
-            # Load model
-            ###################################################################
             model = WideResNet()
-            model_path = "/home/zsarwar/Projects/SparseDNNs/adversarial-attacks-pytorch/demo/models/cifar10/L2/Standard.pt"
-            checkpoint = torch.load(model_path, map_location=torch.device('cuda:0'))
-            state_dict = checkpoint['state_dict']
-            model.load_state_dict(state_dict)
-            ###################################################################
         else:
             #model = models.__dict__[args.arch]()
-            model = resnet18()
-            # Test after training
-
+            if args.arch == 'resnet18':
+                model = resnet18()
+    
         if args.new_classifier:
             if args.arch == 'resnet50':
                 model.fc = nn.Linear(in_features=2048, out_features=args.num_classes, bias=True)
             if args.arch == 'resnet18':
                 model.fc = nn.Linear(in_features=512, out_features=args.num_classes, bias=True)
-    
-            if args.arch == 'resnet50':
-                # Test after training
-                # Loading the best checkpoint    
-                best_ckpt_name = "model_best.pth.tar"
-                best_ckpt_path = os.path.join(ckpt_dir, best_ckpt_name)
-                logger.critical(best_ckpt_path)
-                logger.critical("Testing after training")
-                if args.gpu is None:
-                    checkpoint = torch.load(best_ckpt_path, map_location=loc)
-                elif torch.cuda.is_available():
-                    # Map model to be loaded to specified single gpu.
-                    loc = 'cuda:{}'.format(args.gpu)
-                    # Load best checkpoint
-                    checkpoint = torch.load(best_ckpt_path, map_location=loc)
-                best_epoch = checkpoint['epoch']
-                best_acc1 = checkpoint['best_acc1']
-                best_acc1 = torch.tensor(best_acc1)
-                if args.gpu is not None:
-                # best_acc1 may be from a checkpoint from a different GPU
-                    best_acc1 = best_acc1.to(args.gpu)
-                model.load_state_dict(checkpoint['state_dict'])
-                logger.critical(f"=> loaded checkpoint '{best_ckpt_path}' (epoch {best_epoch})")
-                logger.critical(f"Evaluating {args.attack_split}")
 
-    
+        
+    # Test after training
+    # Loading the best checkpoint    
+    best_ckpt_name = "model_best.pth.tar"
+    best_ckpt_path = os.path.join(ckpt_dir, best_ckpt_name)
+    logger.critical(best_ckpt_path)
+    logger.critical("Testing after training")
+    if args.gpu is None:
+        checkpoint = torch.load(best_ckpt_path, map_location=loc)
+    elif torch.cuda.is_available():
+        loc = 'cuda:{}'.format(args.gpu)
+        checkpoint = torch.load(best_ckpt_path, map_location=loc)
+    best_acc1 = torch.tensor(best_acc1)
+    if args.gpu is not None:
+        best_acc1 = best_acc1.to(args.gpu)
+    model.load_state_dict(checkpoint['state_dict'])
+    logger.critical(f"=> loaded checkpoint '{best_ckpt_path}'")
+    logger.critical(f"Evaluating {args.attack_split}")
+
+
     
     
     
@@ -348,11 +364,9 @@ def main_worker(gpu, ngpus_per_node, args):
     num_classes = args.num_classes
     transform_test = transforms.Compose([
     transforms.ToTensor(),
-    #normalize,   
     ])
 
     transform_adv = transforms.Compose([
-    #normalize,   
     ])
 
 
@@ -361,7 +375,6 @@ def main_worker(gpu, ngpus_per_node, args):
     if args.test_type == 'adversarial':
         adv_dataset_config = f"Adversarial_Datasets/{args.attack}_adv_samples_{args.total_attack_samples}_{args.attack_split}_detector-type-{args.detector_type}_integrated-{args.integrated}.pickle"
         adv_dataset_path = os.path.join(expr_dir, adv_dataset_config)
-        print("Testing dataset ", adv_dataset_path)
         with open(adv_dataset_path, 'rb') as adv_set:
             adv_samples = pickle.load(adv_set)
 
@@ -374,12 +387,41 @@ def main_worker(gpu, ngpus_per_node, args):
                                             )
         random_indices = np.random.randint(low=0, high = len(valset), size=(args.total_attack_samples))
         valset = Subset(valset, indices=random_indices)
+
+
+        ########################################################################
+        # Filter out incorrectly classified samples
+        model = model.eval()
+
+        val_loader = torch.utils.data.DataLoader(valset, batch_size=args.batch_size,
+                                                shuffle=False, num_workers=args.workers)
+        
+        mask = filter_samples(model,val_loader)
+        good_indices = torch.where(mask == True)[1].tolist()
+        # Create new subsets
+
+        valset = Subset(valset, indices=good_indices)        
+        ########################################################################
+
     val_loader = torch.utils.data.DataLoader(valset, batch_size=args.batch_size,
                                             shuffle=False, num_workers=args.workers)
     
-    
+    avg, true_labels, pred_labels = validate(val_loader, model, criterion, args)
 
-    validate(val_loader, model, criterion, args)
+    # Process and save predictions
+    true_labels = [x for lst in true_labels for x in lst]
+    pred_labels = [x for lst in pred_labels for x in lst]
+
+    predictions = {}
+    predictions['true_labels'] = true_labels
+    predictions['pred_labels'] = pred_labels
+    
+    preds_config = f"Predictions/Model/{args.attack}_type-{args.test_type}_{args.total_attack_samples}_{args.attack_split}_detector-type-{args.detector_type}_integrated-{args.integrated}.pickle"
+    preds_path = os.path.join(expr_dir, preds_config)
+    with open(preds_path, 'wb') as o_file:
+        pickle.dump(predictions, o_file)
+
+
 
 
 
@@ -391,7 +433,8 @@ def compute_f1_score(preds, targets):
     return f1_res
 
 def validate(val_loader, model, criterion, args):
-
+    all_true_labels = []
+    all_pred_labels = []
     def run_validate(loader, base_progress=0):
         with torch.no_grad():
             end = time.time()
@@ -409,6 +452,12 @@ def validate(val_loader, model, criterion, args):
                 # compute output
                 output, relu_feats = model(images)
                 loss = criterion(output, target)
+
+                # Save true and predicted labels
+                true_labels = target.detach().cpu().tolist()
+                pred_labels = torch.argmax(output, dim=1).detach().cpu().tolist()
+                all_true_labels.append(true_labels)
+                all_pred_labels.append(pred_labels)
 
                 # measure accuracy and record loss
                 acc1, acc5 = utils.accuracy(output, target, topk=(1, 2))
@@ -449,7 +498,7 @@ def validate(val_loader, model, criterion, args):
         run_validate(aux_val_loader, len(val_loader))
     summ_stats = progress.display_summary()
     logger.critical(summ_stats)
-    return top1.avg
+    return top1.avg, all_true_labels, all_pred_labels
 
 
 class Summary(Enum):

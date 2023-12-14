@@ -157,6 +157,8 @@ adv_datasets_folder = "Adversarial_Datasets"
 adv_datasets_dir = os.path.join(expr_dir, adv_datasets_folder)
 benign_datasets_folder = "Benign_Datasets"
 benign_datasets_dir = os.path.join(expr_dir, benign_datasets_folder)
+preds_folder = "Predictions"
+preds_dir = os.path.join(expr_dir, preds_folder)
 
 
 
@@ -172,6 +174,9 @@ if not os.path.exists(adv_datasets_dir):
     os.makedirs(adv_datasets_dir)
 if not os.path.exists(benign_datasets_dir):
     os.makedirs(benign_datasets_dir)
+if not os.path.exists(preds_dir):
+    os.makedirs(preds_dir)
+
 
 
 # Create log files
@@ -207,6 +212,7 @@ def main():
         torch.manual_seed(args.seed)
         cudnn.deterministic = True
         cudnn.benchmark = False
+        np.random.seed(args.seed)
 
         
     args.distributed = args.multiprocessing_distributed
@@ -235,16 +241,8 @@ def main_worker(gpu, ngpus_per_node, args):
     # create model
     if args.pretrained:
         logger.critical(f"=> using pre-trained model {args.arch}")
-        
         if args.arch == 'wideresnet':
-            # Load model
-            ###################################################################
             model = WideResNet()
-            model_path = "/home/zsarwar/Projects/SparseDNNs/adversarial-attacks-pytorch/demo/models/cifar10/L2/Standard.pt"
-            checkpoint = torch.load(model_path, map_location=torch.device('cuda:0'))
-            state_dict = checkpoint['state_dict']
-            model.load_state_dict(state_dict)
-            ###################################################################
         
         elif args.arch == 'resnet18':
             model = models.__dict__[args.arch](weights=ResNet18_Weights.IMAGENET1K_V2)
@@ -258,7 +256,6 @@ def main_worker(gpu, ngpus_per_node, args):
     else:
         logger.critical(f"=> creating model {args.arch}")
         model = models.__dict__[args.arch]()
-        
         if args.new_classifier:
             if args.arch == 'resnet50':
                 model.fc = nn.Linear(in_features=2048, out_features=args.num_classes, bias=True)
@@ -483,29 +480,28 @@ def main_worker(gpu, ngpus_per_node, args):
 
     # Test after training
     # Loading the best checkpoint
-    if not args.eval_pretrained:
-        best_ckpt_name = "model_best.pth.tar"
-        best_ckpt_path = os.path.join(ckpt_dir, best_ckpt_name)
-        logger.critical(best_ckpt_path)
-        logger.critical("Testing after training")
-        if args.gpu is None:
-            checkpoint = torch.load(best_ckpt_path, map_location=loc)
-        elif torch.cuda.is_available():
-            # Map model to be loaded to specified single gpu.
-            loc = 'cuda:{}'.format(args.gpu)
-            # Load best checkpoint
-            checkpoint = torch.load(best_ckpt_path, map_location=loc)
-        best_epoch = checkpoint['epoch']
-        best_acc1 = checkpoint['best_acc1']
-        best_acc1 = torch.tensor(best_acc1)
-        if args.gpu is not None:
-        # best_acc1 may be from a checkpoint from a different GPU
-            best_acc1 = best_acc1.to(args.gpu)
-        model.load_state_dict(checkpoint['state_dict'])
-        #optimizer.load_state_dict(checkpoint['optimizer'])
-        scheduler.load_state_dict(checkpoint['scheduler'])
-        logger.critical(f"=> loaded checkpoint '{best_ckpt_path}' (epoch {best_epoch})")
-    
+    best_ckpt_name = "model_best.pth.tar"
+    best_ckpt_path = os.path.join(ckpt_dir, best_ckpt_name)
+    logger.critical(best_ckpt_path)
+    logger.critical("Testing after training")
+    if args.gpu is None:
+        checkpoint = torch.load(best_ckpt_path, map_location=loc)
+    elif torch.cuda.is_available():
+        # Map model to be loaded to specified single gpu.
+        loc = 'cuda:{}'.format(args.gpu)
+        # Load best checkpoint
+        checkpoint = torch.load(best_ckpt_path, map_location=loc)
+    best_epoch = checkpoint['epoch']
+    best_acc1 = checkpoint['best_acc1']
+    best_acc1 = torch.tensor(best_acc1)
+    if args.gpu is not None:
+    # best_acc1 may be from a checkpoint from a different GPU
+        best_acc1 = best_acc1.to(args.gpu)
+    model.load_state_dict(checkpoint['state_dict'])
+    #optimizer.load_state_dict(checkpoint['optimizer'])
+    scheduler.load_state_dict(checkpoint['scheduler'])
+    logger.critical(f"=> loaded checkpoint '{best_ckpt_path}' (epoch {best_epoch})")
+
     validate(val_loader, model, criterion, args)
 
     

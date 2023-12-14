@@ -31,6 +31,29 @@ parser.add_argument('--seed', type=int, help="seed for pandas sampling")
 
 args = parser.parse_args()
 
+def run_validate(model, loader, base_progress=0):
+    all_masks = None
+    with torch.no_grad():
+        end = time.time()
+        for i, (images, target) in enumerate(loader):
+            i = base_progress + i
+            if args.gpu is not None and torch.cuda.is_available():
+                images = images.cuda(device, non_blocking=True)
+            if torch.cuda.is_available():
+                target = target.cuda(device, non_blocking=True)
+            # compute output
+            output, relu_feats = model(images)
+            # measure accuracy and record loss
+            _, pred = output.topk(1, largest=True)
+            pred = pred.t()
+            correct = pred.eq(target[None])
+            if isinstance(all_masks, torch.Tensor):
+                all_masks = torch.cat((all_masks, correct), dim=1)
+            else:
+                all_masks = correct
+    return all_masks
+
+
 args.distributed = False
 
 if args.integrated == "True":
@@ -98,7 +121,7 @@ if args.attack_split == "train":
     random_indices = np.random.randint(low=0, high = len(trainset), size=(args.total_attack_samples))
     trainset = Subset(trainset, indices=random_indices)
     dataloader = DataLoader(trainset, batch_size=args.batch_size,
-                                                shuffle=True, num_workers=args.workers)
+                                                shuffle=False, num_workers=args.workers)
 
 elif args.attack_split == 'test':
     testset = torchvision.datasets.CIFAR10(root=dataset_path, train=False,
@@ -107,7 +130,7 @@ elif args.attack_split == 'test':
     random_indices = np.random.randint(low=0, high = len(testset), size=(args.total_attack_samples))
     testset = Subset(testset, indices=random_indices)
     dataloader = DataLoader(testset, batch_size=args.batch_size,
-                                                shuffle=True, num_workers=args.workers)
+                                                shuffle=False, num_workers=args.workers)
    
 
 loc = 'cuda:{}'.format(0)
@@ -136,49 +159,22 @@ ckpt_config = "Checkpoints/model_best.pth.tar"
 ckpt_path = os.path.join(expr_dir, ckpt_config)
 
 if args.model == 'wideresnet':
-    # Load model
-    ###################################################################
     model = WideResNet()
-    model_path = "/home/zsarwar/Projects/SparseDNNs/adversarial-attacks-pytorch/demo/models/cifar10/L2/Standard.pt"
-    checkpoint = torch.load(model_path, map_location=device)
-    state_dict = checkpoint['state_dict']
-    model.load_state_dict(state_dict)
-    ###################################################################
 
 elif args.model == 'resnet18':
     model = resnet18()
     model.fc = nn.Linear(in_features=512, out_features=args.num_classes, bias=True)
-    checkpoint = torch.load(ckpt_path, map_location=loc)
-    model.load_state_dict(checkpoint['state_dict'])
+
+checkpoint = torch.load(ckpt_path, map_location=loc)
+model.load_state_dict(checkpoint['state_dict'])
 
 model = model.to(device)
 
 ########################################################################
 # Filter out incorrectly classified samples
 model = model.eval()
-def run_validate(loader, base_progress=0):
-    all_masks = None
-    with torch.no_grad():
-        end = time.time()
-        for i, (images, target) in enumerate(loader):
-            i = base_progress + i
-            if args.gpu is not None and torch.cuda.is_available():
-                images = images.cuda(device, non_blocking=True)
-            if torch.cuda.is_available():
-                target = target.cuda(device, non_blocking=True)
-            # compute output
-            output, relu_feats = model(images)
-            # measure accuracy and record loss
-            _, pred = output.topk(1, largest=True)
-            pred = pred.t()
-            correct = pred.eq(target[None])
-            if isinstance(all_masks, torch.Tensor):
-                all_masks = torch.cat((all_masks, correct), dim=1)
-            else:
-                all_masks = correct
-    return all_masks
 
-mask = run_validate(dataloader)
+mask = run_validate(model,dataloader)
 good_indices = torch.where(mask == True)[1].tolist()
 # Create new subsets
 if args.attack_split == "train":
@@ -192,9 +188,6 @@ elif args.attack_split == 'test':
     dataloader = DataLoader(testset, batch_size=args.batch_size,
                                                 shuffle=False, num_workers=args.workers)
    
-mask = run_validate(dataloader)
-good_indices = torch.where(mask == True)[1].tolist()
-
 ########################################################################
 
 
