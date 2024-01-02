@@ -81,6 +81,8 @@ parser.add_argument('--test_per_class', type=str)
 parser.add_argument('--trainer_type', type=str)
 parser.add_argument('--original_dataset', type=str)
 parser.add_argument('--original_config', type=str)
+parser.add_argument('--c', type=float)
+parser.add_argument('--d', type=float)
 
 args = parser.parse_args()
 
@@ -159,7 +161,14 @@ benign_datasets_folder = "Benign_Datasets"
 benign_datasets_dir = os.path.join(expr_dir, benign_datasets_folder)
 preds_folder = "Predictions"
 preds_dir = os.path.join(expr_dir, preds_folder)
+# Sub folders for preds_dir
+model_preds = "Model"
+rbf_preds = "RBF"
+perturbed_indices = "Perturbed_Samples"
 
+model_preds_dir = os.path.join(preds_dir, model_preds)
+rbf_preds_dir = os.path.join(preds_dir, rbf_preds)
+perturbed_indices_dir = os.path.join(preds_dir, perturbed_indices)
 
 
 if not os.path.exists(relu_dir):
@@ -176,8 +185,12 @@ if not os.path.exists(benign_datasets_dir):
     os.makedirs(benign_datasets_dir)
 if not os.path.exists(preds_dir):
     os.makedirs(preds_dir)
-
-
+if not os.path.exists(model_preds_dir):
+    os.makedirs(model_preds_dir)
+if not os.path.exists(rbf_preds_dir):
+    os.makedirs(rbf_preds_dir)
+if not os.path.exists(perturbed_indices_dir):
+    os.makedirs(perturbed_indices_dir)
 
 # Create log files
 if(args.evaluate):

@@ -47,7 +47,8 @@ parser.add_argument('--detector_type', type=str)
 parser.add_argument('--total_attack_samples', type=int)
 parser.add_argument('--attack', type=str)
 parser.add_argument('--integrated', type=str)
-
+parser.add_argument('--c', type=float)
+parser.add_argument('--d', type=float)
 args = parser.parse_args()
 os.environ['CUDA_VISIBLE_DEVICES'] = str(args.gpu)
 args.gpu=0
@@ -200,7 +201,7 @@ relu_dir = os.path.join(expr_dir, relu_folder)
 
 
 
-relu_dict = f"ReLUs_{args.attack}_{args.extract_split}_{args.extract_type}_{args.total_attack_samples}_detector-type-{args.detector_type}_integrated-{args.integrated}.pth"
+relu_dict = f"ReLUs_{args.attack}_{args.extract_split}_{args.extract_type}_{args.total_attack_samples}_detector-type-{args.detector_type}_integrated-{args.integrated}_c-{args.c}_d-{args.d}.pth"
 
 relu_dict_path = os.path.join(relu_dir, relu_dict)
 
@@ -318,10 +319,10 @@ def main_worker(gpu, ngpus_per_node, args):
             # Load model
             ###################################################################
             model = WideResNet()
-            model_path = "/home/zsarwar/Projects/SparseDNNs/adversarial-attacks-pytorch/demo/models/cifar10/L2/Standard.pt"
-            checkpoint = torch.load(model_path, map_location=torch.device('cuda:0'))
-            state_dict = checkpoint['state_dict']
-            model.load_state_dict(state_dict)
+            #model_path = "/home/zsarwar/Projects/SparseDNNs/adversarial-attacks-pytorch/demo/models/cifar10/L2/Standard.pt"
+            #checkpoint = torch.load(model_path, map_location=torch.device('cuda:0'))
+            #state_dict = checkpoint['state_dict']
+            #model.load_state_dict(state_dict)
             ###################################################################
         elif args.arch == 'resnet18':
             model = resnet18()
@@ -463,6 +464,11 @@ def main_worker(gpu, ngpus_per_node, args):
 
     ])
 
+    flipped_indices_config = f"Predictions/Perturbed_Samples/{args.attack}_benign_samples_{args.total_attack_samples}_{args.extract_split}_detector-type-{args.detector_type}_integrated-{args.integrated}_c-{args.c}_d-{args.d}.pt"
+    flipped_indices_path = os.path.join(expr_dir, flipped_indices_config)
+    flipped_indices = torch.load(flipped_indices_path)
+
+
     dataset_path = configs.dataset_root_paths[args.original_dataset]
 
 
@@ -481,17 +487,19 @@ def main_worker(gpu, ngpus_per_node, args):
             mask = run_validate(model,train_loader)
             good_indices = torch.where(mask == True)[1].tolist()
             # Create new subsets
-            trainset = Subset(trainset, indices=good_indices)      
+            trainset = Subset(trainset, indices=good_indices)
+            trainset = Subset(trainset, indices=flipped_indices)      
             ########################################################################
 
         elif args.extract_type == 'adversarial':
             # Load adversarial dataset            
-            adv_dataset_config = f"Adversarial_Datasets/{args.attack}_adv_samples_{args.total_attack_samples}_{args.extract_split}_detector-type-{args.detector_type}_integrated-{args.integrated}.pickle"
+            adv_dataset_config = f"Adversarial_Datasets/{args.attack}_adv_samples_{args.total_attack_samples}_{args.extract_split}_detector-type-{args.detector_type}_integrated-{args.integrated}_c-{args.c}_d-{args.d}.pickle"
             
             adv_dataset_path = os.path.join(expr_dir, adv_dataset_config)
             with open(adv_dataset_path, 'rb') as adv_set:
                 adv_samples = pickle.load(adv_set)
             trainset = CustomImageDataset_Adv(adv_samples)
+            trainset = Subset(trainset, indices=flipped_indices)
             
         train_loader = torch.utils.data.DataLoader(trainset, batch_size=args.batch_size,
                                                 shuffle=False, num_workers=args.workers)
@@ -511,18 +519,19 @@ def main_worker(gpu, ngpus_per_node, args):
             mask = run_validate(model,val_loader)
             good_indices = torch.where(mask == True)[1].tolist()
             # Create new subsets
-            valset = Subset(valset, indices=good_indices)        
+            valset = Subset(valset, indices=good_indices)  
+            #valset = Subset(valset, indices=flipped_indices)            
             ########################################################################
 
         elif args.extract_type == 'adversarial':
             # Load adversarial dataset
-            adv_dataset_config = f"Adversarial_Datasets/{args.attack}_adv_samples_{args.total_attack_samples}_{args.extract_split}_detector-type-{args.detector_type}_integrated-{args.integrated}.pickle"
+            adv_dataset_config = f"Adversarial_Datasets/{args.attack}_adv_samples_{args.total_attack_samples}_{args.extract_split}_detector-type-{args.detector_type}_integrated-{args.integrated}_c-{args.c}_d-{args.d}.pickle"
             adv_dataset_path = os.path.join(expr_dir, adv_dataset_config)
             
             with open(adv_dataset_path, 'rb') as adv_set:
                 adv_samples = pickle.load(adv_set)
             valset = CustomImageDataset_Adv(adv_samples)
-
+            #valset = Subset(valset, indices=flipped_indices)
         val_loader = torch.utils.data.DataLoader(valset, batch_size=args.batch_size,
                                                 shuffle=False, num_workers=args.workers)
     

@@ -1,12 +1,11 @@
 CREATE_ROOT=false
 TRAIN_MT_BASELINE=false
-RUN_ATTACK=false
-TEST=false
-FEATURE_EXTRACTION_BENIGN=false
-FEATURE_EXTRACTION_ADVERSARIAL=false
-TRAIN_RBF=false
-
-TEST_MT_INTEGRATED_PREATTACK=false
+RUN_ATTACK=true
+TEST=true
+FEATURE_EXTRACTION_BENIGN=true
+FEATURE_EXTRACTION_ADVERSARIAL=true
+TRAIN_RBF=true
+TEST_MT_INTEGRATED_PREATTACK=true
 RUN_ATTACK_INTEGRATED=true
 TEST_INTEGRATED_ADVERSARIAL=true
 
@@ -23,8 +22,10 @@ seed=42
 attack="CW"
 detector_type="Quantized" # Regular
 
-C=0.9
-gamma=0.9
+C=0.6
+gamma=0.5
+c=0.1
+d=0
 
 
 if [ "$detector_type" = 'Quantized' ]
@@ -127,7 +128,10 @@ then
     --test_per_class=$test_per_class \
     --original_dataset=$original_dataset \
     --original_config=$original_config \
-    --trainer_type=$trainer_type
+    --trainer_type=$trainer_type \
+    --c=$c \
+    --d=$d
+
 fi
 
 #############################################################################################
@@ -138,8 +142,7 @@ RUN_ATTACK_TEST=true
 
 # Attack parameters
 original_dataset=cifar10
-c=0.1
-steps=200
+steps=100
 lr=0.01
 batch_size=256
 total_attack_samples_train=5120
@@ -164,6 +167,7 @@ then
         --batch_size=$batch_size \
         --lr=$lr \
         --c=$c \
+        --d=$d \
         --steps=$steps \
         --seed=$seed \
         --attack=$attack \
@@ -191,6 +195,7 @@ then
         --batch_size=$batch_size \
         --lr=$lr \
         --c=$c \
+        --d=$d \
         --steps=$steps \
         --seed=$seed \
         --attack=$attack \
@@ -208,7 +213,7 @@ fi
 #############################################################################################
 # Test adversarial samples on the model
 
-TEST_ADVERSARIAL_TRAIN=false
+TEST_ADVERSARIAL_TRAIN=true
 TEST_ADVERSARIAL_TEST=true
 TEST_BENIGN_TEST=true
 test_type=adversarial
@@ -249,7 +254,9 @@ then
         --detector_type=$detector_type \
         --total_attack_samples=$total_attack_samples_train \
         --integrated=$integrated \
-        --attack=$attack
+        --attack=$attack \
+        --c=$c \
+        --d=$d
 
     fi
 
@@ -288,7 +295,9 @@ then
         --detector_type=$detector_type \
         --total_attack_samples=$total_attack_samples_test \
         --integrated=$integrated \
-        --attack=$attack
+        --attack=$attack \
+        --c=$c \
+        --d=$d
     fi
     test_type=benign
     if [ "$TEST_BENIGN_TEST" = true ]
@@ -325,7 +334,9 @@ then
         --detector_type=$detector_type \
         --total_attack_samples=$total_attack_samples_test \
         --integrated=$integrated \
-        --attack=$attack
+        --attack=$attack \
+        --c=$c \
+        --d=$d
     fi
 fi
 
@@ -377,7 +388,9 @@ then
         --detector_type=$detector_type \
         --total_attack_samples=$total_attack_samples_train \
         --integrated=$integrated \
-        --attack=$attack
+        --attack=$attack \
+        --c=$c \
+        --d=$d
 
     fi
 
@@ -420,7 +433,9 @@ then
         --detector_type=$detector_type \
         --total_attack_samples=$total_attack_samples_test \
         --integrated=$integrated \
-        --attack=$attack
+        --attack=$attack \
+        --c=$c \
+        --d=$d
 
     fi
 
@@ -475,7 +490,9 @@ then
         --detector_type=$detector_type \
         --total_attack_samples=$total_attack_samples_train \
         --integrated=$integrated \
-        --attack=$attack
+        --attack=$attack \
+        --c=$c \
+        --d=$d
     fi
 
     extract_split=test
@@ -516,7 +533,9 @@ then
         --detector_type=$detector_type \
         --total_attack_samples=$total_attack_samples_test \
         --integrated=$integrated \
-        --attack=$attack
+        --attack=$attack \
+        --c=$c \
+        --d=$d
     fi
 fi
 
@@ -534,6 +553,7 @@ then
     --mt_hash_config=$mt_hash_config \
     --seed=$seed \
     --attack=$attack \
+    --attack_split=$attack_split \
     --trainer_type=$trainer_type \
     --integrated=$integrated \
     --detector_type=$detector_type \
@@ -541,7 +561,9 @@ then
     --total_train_samples=$total_attack_samples_train \
     --train=$train \
     --C=$C \
-    --gamma=$gamma
+    --gamma=$gamma \
+    --c=$c \
+    --d=$d
 
 fi
 
@@ -550,31 +572,12 @@ fi
 # Start integrated attack
 
 #############################################################################################
-# Attack parameters
-
-original_dataset=cifar10
-c=0.09
-d=0.005
-
-# Quantized
-if [ "$detector_type" = 'Quantized' ]
-then
-    c=0.0015
-    d=2
-
-fi
-
-steps=200
-lr=0.1
-batch_size=256
-total_attack_samples_test=5120
-
 
 #############################################################################################
 # Get baseline performance of samples to be attacked
 total_attack_samples=$total_attack_samples_train
 integrated=False
-test_type=benign
+test_type=adversarial
 attack_split='test'
 extract_split=$attack_split
 extract_type=$test_type
@@ -613,8 +616,9 @@ train=False
         --detector_type=$detector_type \
         --total_attack_samples=$total_attack_samples_test \
         --integrated=$integrated \
-        --attack=$attack
-    
+        --attack=$attack \
+        --c=$c \
+        --d=$d
     
         cd ${home_dir}
         python3 feature_extraction.py \
@@ -650,7 +654,10 @@ train=False
         --detector_type=$detector_type \
         --total_attack_samples=$total_attack_samples_test \
         --integrated=$integrated \
-        --attack=$attack
+        --attack=$attack \
+        --c=$c \
+        --d=$d
+
 
         # Test RBF Kernel
         train='False'
@@ -662,16 +669,20 @@ train=False
         --mt_hash_config=$mt_hash_config \
         --seed=$seed \
         --attack=$attack \
+        --attack_split=$attack_split \
         --trainer_type=$trainer_type \
         --total_attack_samples=$total_attack_samples_test \
         --total_train_samples=$total_attack_samples \
         --train=$train \
         --test_type=$test_type \
         --integrated=$integrated \
-        --detector_type=$detector_type
+        --detector_type=$detector_type \
+        --c=$c \
+        --d=$d
 
 
-        test_type=adversarial
+
+        test_type=benign
 
         cd ${home_dir}
         python3 test.py \
@@ -705,7 +716,9 @@ train=False
         --detector_type=$detector_type \
         --total_attack_samples=$total_attack_samples_test \
         --integrated=$integrated \
-        --attack=$attack
+        --attack=$attack \
+        --c=$c \
+        --d=$d
     
     
         cd ${home_dir}
@@ -742,7 +755,9 @@ train=False
         --detector_type=$detector_type \
         --total_attack_samples=$total_attack_samples_test \
         --integrated=$integrated \
-        --attack=$attack
+        --attack=$attack \
+        --c=$c \
+        --d=$d
 
         # Test RBF Kernel
         train='False'
@@ -754,13 +769,16 @@ train=False
         --mt_hash_config=$mt_hash_config \
         --seed=$seed \
         --attack=$attack \
+        --attack_split=$attack_split \
         --trainer_type=$trainer_type \
         --total_attack_samples=$total_attack_samples_test \
         --total_train_samples=$total_attack_samples \
         --train=$train \
         --test_type=$test_type \
         --integrated=$integrated \
-        --detector_type=$detector_type
+        --detector_type=$detector_type \
+        --c=$c \
+        --d=$d
 
 
 
@@ -771,6 +789,24 @@ train=False
 # Start integrated attack
 
 # Attack parameters
+# Attack parameters
+
+original_dataset=cifar10
+c=0.1
+d=0.1
+
+# Quantized
+if [ "$detector_type" = 'Quantized' ]
+then
+    c=0.1
+    d=0.1
+
+fi
+
+steps=100
+lr=0.01
+batch_size=256
+total_attack_samples_test=5120
 
 
 integrated=True
@@ -800,7 +836,7 @@ then
     --num_classes=$num_classes \
     --integrated=$integrated \
     --total_train_samples=$total_attack_samples \
-    --trainer_type=$trainer_type
+    --trainer_type=$trainer_type \
 
 fi
 
@@ -842,8 +878,9 @@ then
     --detector_type=$detector_type \
     --total_attack_samples=$total_attack_samples_test \
     --integrated=$integrated \
-    --attack=$attack
-
+    --attack=$attack \
+    --c=$c \
+    --d=$d
     # Feature extraction from adversarial samples
     cd ${home_dir}
     python3 feature_extraction.py \
@@ -879,7 +916,9 @@ then
     --detector_type=$detector_type \
     --total_attack_samples=$total_attack_samples_test \
     --integrated=$integrated \
-    --attack=$attack
+    --attack=$attack\
+    --c=$c \
+    --d=$d
 
     # Test RBF
     cd ${home_dir}
@@ -890,13 +929,17 @@ then
     --mt_hash_config=$mt_hash_config \
     --seed=$seed \
     --attack=$attack \
+    --attack_split=$attack_split \
     --trainer_type=$trainer_type \
     --total_attack_samples=$total_attack_samples_test \
     --total_train_samples=$total_attack_samples \
     --train=$train \
     --test_type=$test_type \
     --integrated=$integrated \
-    --detector_type=$detector_type
+    --detector_type=$detector_type \
+    --c=$c \
+    --d=$d
+    
 fi
 #############################################################################################
 # THE END

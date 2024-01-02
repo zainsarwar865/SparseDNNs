@@ -88,6 +88,7 @@ from enum import Enum
 import random
 import torch.backends.cudnn as cudnn
 from utils.wide_resnet import WideResNet
+import yaml
 
 if args.integrated:
     if args.detector_type == 'Quantized':
@@ -111,7 +112,6 @@ normalize  =  transforms.Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.26
     
 transformation = transforms.Compose([
     transforms.ToTensor(), 
-    #normalize
     ])
 dataset_path = configs.dataset_root_paths[args.original_dataset]
 
@@ -153,6 +153,16 @@ expr_hash = (hashlib.md5(expr_config.encode('UTF-8')))
 expr_name = args.trainer_type + "_" + expr_hash.hexdigest()
 expr_dir = os.path.join(mt_root_directory, expr_name)
 
+
+# Create and save YAML file
+expr_config_dict = {}
+all_args = args._get_kwargs()
+expr_config_dict = {tup[0]:tup[1] for tup in all_args}
+yaml_file = os.path.join(expr_dir, f"Config_integrated_{args.integrated}.yaml")
+with open(yaml_file, 'w') as yaml_out:
+    yaml.dump(expr_config_dict, yaml_out)
+
+
 # Load checkpoint path
 expr_dir = os.path.join(mt_root_directory, expr_name)
 ckpt_config = "Checkpoints/model_best.pth.tar"
@@ -190,6 +200,7 @@ elif args.attack_split == 'test':
    
 ########################################################################
 
+print(f"Size of dataset: {len(dataloader.dataset)} ")
 
 if args.integrated:
     # Load RBF model
@@ -210,20 +221,21 @@ if args.integrated:
 all_adv_images = None
 all_og_images = None
 all_labels = None
+all_flipped_indices = None
+
+
 
 if args.integrated:
     if args.attack == "CW":
         atk = CW(model, rbf_svm, c=args.c, d=args.d,  steps=args.steps, lr=args.lr)
 else:     
     if args.attack == "CW":
-        atk = CW(model, c=args.c,  steps=args.steps, lr=args.lr)
-    elif args.attack == "DeepFool":
-        atk = DeepFool(model, steps=50, overshoot=0.02)
+        atk = CW(model, c=args.c, steps=args.steps, lr=args.lr)
 
 #atk.set_normalization_used(mean=[0.4914, 0.4822, 0.4465], std=[0.247, 0.243, 0.261])
 
-for images, labels in dataloader:
-    adv_images, og_images = atk(images, labels)
+for bn, (images, labels) in enumerate(dataloader):
+    adv_images, og_images, flipped_indices  = atk(images, labels)
     if isinstance(all_adv_images, torch.Tensor):
         all_adv_images = torch.concat((all_adv_images, adv_images), dim=0)
         all_og_images = torch.concat((all_og_images, og_images), dim=0)
@@ -235,8 +247,14 @@ for images, labels in dataloader:
     else:
         all_labels = labels
 
+    if isinstance(all_flipped_indices, torch.Tensor):
+        flipped_indices = flipped_indices + (args.batch_size * bn)
+        all_flipped_indices = torch.concat((all_flipped_indices, flipped_indices), dim=0)
+    else:
+        all_flipped_indices = flipped_indices
+
 # Save adversarial images
-image_save_config = f"Adversarial_Datasets/{args.attack}_adv_samples_{args.total_attack_samples}_{args.attack_split}_detector-type-{args.detector_type}_integrated-{args.integrated}.pickle"
+image_save_config = f"Adversarial_Datasets/{args.attack}_adv_samples_{args.total_attack_samples}_{args.attack_split}_detector-type-{args.detector_type}_integrated-{args.integrated}_c-{args.c}_d-{args.d}.pickle"
 image_save_path  = os.path.join(expr_dir, image_save_config)
 
 adv_dataset = [all_adv_images, all_labels]
@@ -244,13 +262,24 @@ ben_dataset = [all_og_images, all_labels]
 with open(image_save_path, 'wb') as out_dataset:
     pickle.dump(adv_dataset, out_dataset)
 
-image_save_config = f"Benign_Datasets/{args.attack}_benign_samples_{args.total_attack_samples}_{args.attack_split}_detector-type-{args.detector_type}_integrated-{args.integrated}.pickle"
+image_save_config = f"Benign_Datasets/{args.attack}_benign_samples_{args.total_attack_samples}_{args.attack_split}_detector-type-{args.detector_type}_integrated-{args.integrated}_c-{args.c}_d-{args.d}.pickle"
 image_save_path  = os.path.join(expr_dir, image_save_config)
 
 with open(image_save_path, 'wb') as out_dataset:
     pickle.dump(ben_dataset, out_dataset)
-    
 
+perturbed_indices_save_config = f"Predictions/Perturbed_Samples/{args.attack}_benign_samples_{args.total_attack_samples}_{args.attack_split}_detector-type-{args.detector_type}_integrated-{args.integrated}_c-{args.c}_d-{args.d}.pt"
+perturbed_indices_save_path  = os.path.join(expr_dir, perturbed_indices_save_config)
+
+torch.save(all_flipped_indices, perturbed_indices_save_path)
+
+total_samples = len(dataloader.dataset)
+total_flipped = all_flipped_indices.shape[0]
+asr = total_flipped / total_samples
+print("Attack stats...")
+print(f"Total samples : {total_samples}")
+print(f"Total flipped : {total_flipped}")
+print(f"ASR : {asr}")
 print("Attack completed...")
 
 

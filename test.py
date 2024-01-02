@@ -45,6 +45,8 @@ parser.add_argument('--attack_split', type=str)
 parser.add_argument('--detector_type', type=str)
 parser.add_argument('--integrated', type=str)
 parser.add_argument('--total_attack_samples', type=int)
+parser.add_argument('--c', type=float)
+parser.add_argument('--d', type=float)
 
 
 args = parser.parse_args()
@@ -369,17 +371,18 @@ def main_worker(gpu, ngpus_per_node, args):
     transform_adv = transforms.Compose([
     ])
 
+    flipped_indices_config = f"Predictions/Perturbed_Samples/{args.attack}_benign_samples_{args.total_attack_samples}_{args.attack_split}_detector-type-{args.detector_type}_integrated-{args.integrated}_c-{args.c}_d-{args.d}.pt"
+    flipped_indices_path = os.path.join(expr_dir, flipped_indices_config)
+    flipped_indices = torch.load(flipped_indices_path)
 
     dataset_path = configs.dataset_root_paths[args.original_dataset]
-
     if args.test_type == 'adversarial':
-        adv_dataset_config = f"Adversarial_Datasets/{args.attack}_adv_samples_{args.total_attack_samples}_{args.attack_split}_detector-type-{args.detector_type}_integrated-{args.integrated}.pickle"
+        adv_dataset_config = f"Adversarial_Datasets/{args.attack}_adv_samples_{args.total_attack_samples}_{args.attack_split}_detector-type-{args.detector_type}_integrated-{args.integrated}_c-{args.c}_d-{args.d}.pickle" 
         adv_dataset_path = os.path.join(expr_dir, adv_dataset_config)
         with open(adv_dataset_path, 'rb') as adv_set:
             adv_samples = pickle.load(adv_set)
 
         valset = CustomImageDataset_Adv(adv_samples, transform=transform_adv)
-    
     
     elif args.test_type == 'benign':
         valset = torchvision.datasets.CIFAR10(root=dataset_path, train=False,
@@ -402,7 +405,7 @@ def main_worker(gpu, ngpus_per_node, args):
 
         valset = Subset(valset, indices=good_indices)        
         ########################################################################
-
+    print("Raw accuracy")
     val_loader = torch.utils.data.DataLoader(valset, batch_size=args.batch_size,
                                             shuffle=False, num_workers=args.workers)
     
@@ -416,13 +419,18 @@ def main_worker(gpu, ngpus_per_node, args):
     predictions['true_labels'] = true_labels
     predictions['pred_labels'] = pred_labels
     
-    preds_config = f"Predictions/Model/{args.attack}_type-{args.test_type}_{args.total_attack_samples}_{args.attack_split}_detector-type-{args.detector_type}_integrated-{args.integrated}.pickle"
+    preds_config = f"Predictions/Model/{args.attack}_type-{args.test_type}_{args.total_attack_samples}_{args.attack_split}_detector-type-{args.detector_type}_integrated-{args.integrated}_c-{args.c}_d-{args.d}.pickle"
     preds_path = os.path.join(expr_dir, preds_config)
     with open(preds_path, 'wb') as o_file:
         pickle.dump(predictions, o_file)
 
 
-
+    # Filtered indices
+    valset = Subset(valset, indices=flipped_indices)        
+    val_loader = torch.utils.data.DataLoader(valset, batch_size=args.batch_size,
+                                            shuffle=False, num_workers=args.workers)
+    print("Filtered accuracy")
+    avg, true_labels, pred_labels = validate(val_loader, model, criterion, args)
 
 
 def compute_f1_score(preds, targets):

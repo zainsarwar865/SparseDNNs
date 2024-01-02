@@ -12,11 +12,14 @@ parser.add_argument('--total_train_samples', type=int)
 parser.add_argument('--C', type=float)
 parser.add_argument('--gamma', type=float)
 parser.add_argument('--attack', type=str)
+parser.add_argument('--attack_split', type=str)
 parser.add_argument('--detector_type', type=str)
 parser.add_argument('--trainer_type', type=str)
 parser.add_argument('--integrated', type=str)
 parser.add_argument('--train', type=str)
 parser.add_argument('--test_type', type=str)
+parser.add_argument('--c', type=float)
+parser.add_argument('--d', type=float)
 
 args = parser.parse_args()
 
@@ -84,10 +87,10 @@ def unison_shuffled_copies(x_ben, y_ben, x_adv, y_adv):
 
 def get_paths(base_path):
     relu_dir = "ReLUs"
-    train_benign = f"ReLUs_{args.attack}_train_benign_{args.total_attack_samples}_detector-type-{args.detector_type}_integrated-{args.integrated}.pth"
-    train_adversarial = f"ReLUs_{args.attack}_train_adversarial_{args.total_attack_samples}_detector-type-{args.detector_type}_integrated-{args.integrated}.pth"
-    test_benign = f"ReLUs_{args.attack}_test_benign_{args.total_attack_samples}_detector-type-{args.detector_type}_integrated-{args.integrated}.pth"
-    test_adversarial = f"ReLUs_{args.attack}_test_adversarial_{args.total_attack_samples}_detector-type-{args.detector_type}_integrated-{args.integrated}.pth"
+    train_benign = f"ReLUs_{args.attack}_train_benign_{args.total_attack_samples}_detector-type-{args.detector_type}_integrated-{args.integrated}_c-{args.c}_d-{args.d}.pth"
+    train_adversarial = f"ReLUs_{args.attack}_train_adversarial_{args.total_attack_samples}_detector-type-{args.detector_type}_integrated-{args.integrated}_c-{args.c}_d-{args.d}.pth"
+    test_benign = f"ReLUs_{args.attack}_test_benign_{args.total_attack_samples}_detector-type-{args.detector_type}_integrated-{args.integrated}_c-{args.c}_d-{args.d}.pth"
+    test_adversarial = f"ReLUs_{args.attack}_test_adversarial_{args.total_attack_samples}_detector-type-{args.detector_type}_integrated-{args.integrated}_c-{args.c}_d-{args.d}.pth"
 
     train_benign = os.path.join(base_path, relu_dir, train_benign)
     train_adversarial = os.path.join(base_path, relu_dir,  train_adversarial)
@@ -132,6 +135,13 @@ if args.train:
                         format='%(asctime)s %(message)s',
                         filemode='w')
     
+    # Compute filtered accuracy
+    flipped_indices_config = f"Predictions/Perturbed_Samples/{args.attack}_benign_samples_{args.total_attack_samples}_test_detector-type-{args.detector_type}_integrated-{args.integrated}_c-{args.c}_d-{args.d}.pt"
+    flipped_indices_path = os.path.join(expr_dir, flipped_indices_config)
+    flipped_indices = torch.load(flipped_indices_path)
+
+
+
     # Creating an object
     logger = logging.getLogger()
     
@@ -162,6 +172,11 @@ if args.train:
 
 
     X_train, y_train = unison_shuffled_copies(train_benign[0], train_benign[1], train_adversarial[0], train_adversarial[1])
+
+    test_benign[0] = test_benign[0][flipped_indices]
+    test_benign[1] = test_benign[1][flipped_indices]
+    test_adversarial[0] = test_adversarial[0][flipped_indices]
+    test_adversarial[1] = test_adversarial[1][flipped_indices]
 
     X_test, y_test = unison_shuffled_copies(test_benign[0], test_benign[1], test_adversarial[0], test_adversarial[1])
 
@@ -223,14 +238,21 @@ if args.train:
 else:
     print("Testing RBF...")
 
+    # Compute filtered accuracy
+    flipped_indices_config = f"Predictions/Perturbed_Samples/{args.attack}_benign_samples_{args.total_attack_samples}_test_detector-type-{args.detector_type}_integrated-{args.integrated}_c-{args.c}_d-{args.d}.pt"
+    flipped_indices_path = os.path.join(expr_dir, flipped_indices_config)
+    flipped_indices = torch.load(flipped_indices_path)
+
+
+
     if args.test_type == 'benign':
-        logging_path = os.path.join(expr_dir,f"test_rbf_integrated_type-{args.test_type}-detector-type-{args.detector_type}.log")
+        logging_path = os.path.join(expr_dir,f"test_rbf_integrated_type-{args.test_type}-detector-type-{args.detector_type}_c-{args.c}_d-{args.d}.log")
         _,__,test_path,____ = get_paths(expr_dir)
         test_data = load_data(test_path, 1)
 
     elif args.test_type == 'adversarial':
 
-        logging_path = os.path.join(expr_dir,f"test_rbf_integrated_type-{args.test_type}-detector-type-{args.detector_type}.log")
+        logging_path = os.path.join(expr_dir,f"test_rbf_integrated_type-{args.test_type}-detector-type-{args.detector_type}_c-{args.c}_d-{args.d}.log")
         _,__,___,test_path = get_paths(expr_dir)
         test_data = load_data(test_path, -1)
 
@@ -249,6 +271,7 @@ else:
     logger.setLevel(logging.INFO)
 
     # Label
+
     X, y = unison_shuffled_copies_ind(test_data[0], test_data[1])
 
     # Loading svm
@@ -260,8 +283,8 @@ else:
     # Testing
     x_pred = clf.predict(X)
     acc = len(np.where(x_pred == y)[0]) / len(X)
-    logger.critical(f"Acc : {acc}")
-    print("Accuracy : ", acc)
+    logger.critical(f"Raw Acc : {acc}")
+    #print("Raw Accuracy : ", acc)
 
     x_pred_scores = clf.decision_function(X)
 
@@ -270,10 +293,18 @@ else:
     predictions['pred_labels'] = x_pred
     predictions['pred_scores'] = x_pred_scores
     # Save RBF preds
-    preds_config = f"Predictions/RBF/{args.attack}_type-{args.test_type}_{args.total_attack_samples}_test_detector-type-{args.detector_type}_integrated-{args.integrated}_rbf.pickle"
+    preds_config = f"Predictions/RBF/{args.attack}_type-{args.test_type}_{args.total_attack_samples}_test_detector-type-{args.detector_type}_integrated-{args.integrated}_rbf_c-{args.c}_d-{args.d}.pickle"
     preds_path = os.path.join(expr_dir, preds_config)
     with open(preds_path, 'wb') as o_file:
         pickle.dump(predictions, o_file)
 
-    print("RBF tested...")
+    
+    test_data[0] = test_data[0][flipped_indices]
+    test_data[1] = test_data[1][flipped_indices]
+    X, y = unison_shuffled_copies_ind(test_data[0], test_data[1])
+    # Testing
+    x_pred = clf.predict(X)
+    acc = len(np.where(x_pred == y)[0]) / len(X)
+    logger.critical(f"Filtered Acc : {acc}")
+    print("Filtered Accuracy : ", acc)
 
