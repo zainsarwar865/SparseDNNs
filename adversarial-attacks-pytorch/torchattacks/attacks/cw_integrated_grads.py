@@ -1,30 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from ..attack import Attack
-
-
-class BinarizeWithSigmoidGradient(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, input):
-        """
-        Forward pass: Binarizes the input tensor
-        """
-        #output = torch.zeros_like(input)
-        #output[input > 0] = 1.0
-        output = torch.where(input > 0, torch.ones_like(input), torch.zeros_like(input))
-        ctx.save_for_backward(input)  # Save input for gradient calculation
-        return output
-    @staticmethod
-    def backward(ctx, grad_output):
-        """
-        Backward pass: Calculates gradients using a sigmoid approximation
-        """
-        input, = ctx.saved_tensors
-        sigmoid = torch.nn.Sigmoid()  # Apply sigmoid for smooth gradient approximation
-        return grad_output * sigmoid(input) * (1 - sigmoid(input))
-
-
+import sys
+from ..attack_hooks import Attack
 
 class CW_RBF(Attack):
     r"""
@@ -57,33 +35,32 @@ class CW_RBF(Attack):
 
     """
 
-    def __init__(self, model, rbf, c=1, d=0.1, kappa=0, steps=50, lr=0.01):
+    def __init__(self, model, rbf, c=1, d=0.001,kappa=0, steps=50, lr=0.01):
         super().__init__("CW", model)
         self.c = c
+        self.d = d
         self.kappa = kappa
         self.steps = steps
         self.lr = lr
         self.supported_mode = ["default", "targeted"]
         self.rbf = rbf
-        self.d = d
-        self.quantizer = BinarizeWithSigmoidGradient.apply
-        #self.set_mode_targeted_random()
+
 
     def forward(self, images, labels):
         r"""
         Overridden.
         """
-        print("C value is : ", self.c)
-        images = images.clone().detach().to(self.device)
-        #print("Inside forward", images[0])
-        labels = labels.clone().detach().to(self.device)
 
+        images = images.clone().detach().to(self.device)
+        labels = labels.clone().detach().to(self.device)
         if self.targeted:
             target_labels = self.get_target_label(images, labels)
 
         # w = torch.zeros_like(images).detach() # Requires 2x times
         w = self.inverse_tanh_space(images).detach()
         w.requires_grad = True
+        w_mean = None
+        self.pool_grads = None
 
         best_adv_images = images.clone().detach()
         best_L2 = 1e10 * torch.ones((len(images))).to(self.device)
@@ -96,39 +73,52 @@ class CW_RBF(Attack):
         Flatten = nn.Flatten()
 
         optimizer = optim.Adam([w], lr=self.lr)
-
         flipped_mask = torch.zeros(images.shape[0], dtype=torch.bool).to(self.device)
-
+        rbf_mask = torch.zeros(images.shape[0], dtype=torch.bool).to(self.device)
         for step in range(self.steps):
-            # Get adversarial images
             print("On step : ", step)
+            # Get adversarial images
             adv_images = self.tanh_space(w)
+            if step > 0:
+                grad = torch.linalg.norm(w.grad).unsqueeze(0)
+                if isinstance(w_mean, torch.Tensor):
+                    w_mean = torch.concatenate((w_mean, grad))
 
+                else:
+                    w_mean = grad
             # Calculate loss
             current_L2 = MSELoss(Flatten(adv_images), Flatten(images)).sum(dim=1)
             L2_loss = current_L2.sum()
-        
             outputs, relu_feats = self.get_logits(adv_images)
-            relus_quantized = self.quantizer(relu_feats)
             # rbf loss
-            rbf_preds = self.rbf(relus_quantized)
+            rbf_preds = self.rbf(relu_feats)
             red_indices = torch.where(rbf_preds > 0)[0]
             print("Pos results are: ", red_indices.shape)
             print("Batch size is ", rbf_preds.shape)
+        
             rbf_loss = MSELoss_svm(rbf_preds, target_scores)
+            
+            if step > 10:
+                rbf_t_mask = rbf_preds > 0
+                rbf_mask = torch.logical_or(rbf_t_mask, rbf_mask)
+                tot_fl = rbf_mask.sum()
+                #print("Tot flipped : ", tot_fl)            
+            
             rbf_loss[red_indices] = 0
-            rbf_loss = rbf_loss.sum()           
+            rbf_loss = rbf_loss.sum()            
+            #print("Tot Succ samples: ", len(red_indices))
+            #print("Tot samples in batch : ", rbf_preds.shape)
             if self.targeted:
                 f_loss = self.f(outputs, target_labels).sum()
             else:
                 f_loss = self.f(outputs, labels).sum()
 
-            cost = L2_loss + self.c * f_loss
-            cost = L2_loss + self.c * f_loss + self.d*rbf_loss
-            #cost = L2_loss 
+
+            cost = L2_loss + self.c * f_loss + self.d * rbf_loss 
+            
             print("L2_loss: ",  L2_loss.item())
-            print("f_loss: ",  f_loss.item())
             print("rbf_loss: ",  rbf_loss.item())
+            print("f_loss: ",  f_loss.item())
             print("--------------------")
             print("cost: ",  cost.item())
             print("--------------------")
@@ -153,6 +143,7 @@ class CW_RBF(Attack):
             
             mask = condition * (best_L2 > current_L2.detach())
             flipped_mask = torch.logical_or(mask, flipped_mask)
+
             best_L2 = mask * current_L2.detach() + (1 - mask) * best_L2
             mask = mask.view([-1] + [1] * (dim - 1))
             best_adv_images = mask * adv_images.detach() + (1 - mask) * best_adv_images
@@ -163,16 +154,23 @@ class CW_RBF(Attack):
             if step % max(self.steps // 10, 1) == 0:
                 if cost.item() > prev_cost:
                     best_adv_images = best_adv_images.detach().cpu()
-                    return best_adv_images, images.cpu()
+                    adv_images = adv_images.detach().cpu()
+                    #return best_adv_images, images.detach().cpu()
+                    return adv_images, images.detach().cpu()
                 prev_cost = cost.item()
             """
-            
         # Only return successful adversarial samples
         flipped_indices = torch.where(flipped_mask == True)[0]
+        #best_adv_images = best_adv_images[flipped_indices]
+        #images = images[flipped_indices]
+        #sub_labels = labels.detach()[flipped_indices].cpu()
         flipped_indices = flipped_indices.detach().cpu()
         best_adv_images = best_adv_images.detach().cpu()
-        
-        return best_adv_images, images.cpu(), flipped_indices
+        adv_images = adv_images.detach().cpu()       
+        print(f"W_mean : {w_mean.mean()}")
+        pool_grads_mean  = torch.linalg.norm(self.pool_grads, dim=1).mean()
+        print(f"pool_grads_mean : {pool_grads_mean}")
+        return best_adv_images, images.detach().cpu(), flipped_indices
 
     def tanh_space(self, x):
         return 1 / 2 * (torch.tanh(x) + 1)
@@ -184,6 +182,7 @@ class CW_RBF(Attack):
 
     def atanh(self, x):
         return 0.5 * torch.log((1 + x) / (1 - x))
+    
 
     # f-function in the paper
     def f(self, outputs, labels):

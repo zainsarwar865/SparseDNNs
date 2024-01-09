@@ -92,9 +92,9 @@ import yaml
 
 if args.integrated:
     if args.detector_type == 'Quantized':
-        from torchattacks.attacks.cw_integrated_quantized import CW_RBF as CW
+        from torchattacks.attacks.cw_integrated_quantized_grads import CW_RBF as CW
     elif args.detector_type == 'Regular':
-        from torchattacks.attacks.cw_integrated import CW_RBF as CW
+        from torchattacks.attacks.cw_integrated_grads import CW_RBF as CW
 else:
     from torchattacks import CW, DeepFool
 

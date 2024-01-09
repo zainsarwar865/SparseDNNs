@@ -1,9 +1,11 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from ..attack import Attack
+import sys
+from ..attack_rbf_included import Attack
+from torch.optim.lr_scheduler import CosineAnnealingLR
 
-
+import torch
 class BinarizeWithSigmoidGradient(torch.autograd.Function):
     @staticmethod
     def forward(ctx, input):
@@ -23,8 +25,6 @@ class BinarizeWithSigmoidGradient(torch.autograd.Function):
         input, = ctx.saved_tensors
         sigmoid = torch.nn.Sigmoid()  # Apply sigmoid for smooth gradient approximation
         return grad_output * sigmoid(input) * (1 - sigmoid(input))
-
-
 
 class CW_RBF(Attack):
     r"""
@@ -57,27 +57,23 @@ class CW_RBF(Attack):
 
     """
 
-    def __init__(self, model, rbf, c=1, d=0.1, kappa=0, steps=50, lr=0.01):
+    def __init__(self, model, rbf, c=1, d=0.001,kappa=0, steps=50, lr=0.01):
         super().__init__("CW", model)
         self.c = c
+        self.d = d
         self.kappa = kappa
         self.steps = steps
         self.lr = lr
         self.supported_mode = ["default", "targeted"]
         self.rbf = rbf
-        self.d = d
         self.quantizer = BinarizeWithSigmoidGradient.apply
-        #self.set_mode_targeted_random()
 
     def forward(self, images, labels):
         r"""
         Overridden.
         """
-        print("C value is : ", self.c)
         images = images.clone().detach().to(self.device)
-        #print("Inside forward", images[0])
         labels = labels.clone().detach().to(self.device)
-
         if self.targeted:
             target_labels = self.get_target_label(images, labels)
 
@@ -97,17 +93,18 @@ class CW_RBF(Attack):
 
         optimizer = optim.Adam([w], lr=self.lr)
 
-        flipped_mask = torch.zeros(images.shape[0], dtype=torch.bool).to(self.device)
+        scheduler = CosineAnnealingLR(
+            optimizer, T_max=self.steps
+        )
+
 
         for step in range(self.steps):
-            # Get adversarial images
             print("On step : ", step)
+            # Get adversarial images
             adv_images = self.tanh_space(w)
-
             # Calculate loss
             current_L2 = MSELoss(Flatten(adv_images), Flatten(images)).sum(dim=1)
             L2_loss = current_L2.sum()
-        
             outputs, relu_feats = self.get_logits(adv_images)
             relus_quantized = self.quantizer(relu_feats)
             # rbf loss
@@ -117,18 +114,18 @@ class CW_RBF(Attack):
             print("Batch size is ", rbf_preds.shape)
             rbf_loss = MSELoss_svm(rbf_preds, target_scores)
             rbf_loss[red_indices] = 0
-            rbf_loss = rbf_loss.sum()           
+            rbf_loss = rbf_loss.sum()            
             if self.targeted:
                 f_loss = self.f(outputs, target_labels).sum()
             else:
                 f_loss = self.f(outputs, labels).sum()
 
-            cost = L2_loss + self.c * f_loss
             cost = L2_loss + self.c * f_loss + self.d*rbf_loss
-            #cost = L2_loss 
+            #cost =  self.c * f_loss + self.d*rbf_loss
+            #cost =  self.c * f_loss
             print("L2_loss: ",  L2_loss.item())
-            print("f_loss: ",  f_loss.item())
             print("rbf_loss: ",  rbf_loss.item())
+            print("f_loss: ",  f_loss.item())
             print("--------------------")
             print("cost: ",  cost.item())
             print("--------------------")
@@ -136,6 +133,7 @@ class CW_RBF(Attack):
             optimizer.zero_grad()
             cost.backward()
             optimizer.step()
+            #scheduler.step()
 
             # Update adversarial images
             pre = torch.argmax(outputs.detach(), 1)
@@ -145,34 +143,30 @@ class CW_RBF(Attack):
             else:
                 # If the attack is not targeted we simply make these two values unequal
                 condition = (pre != labels).float()
-                rbf_condition = rbf_preds > 0 
-                condition = condition * rbf_condition
-
+                #print("Condition", condition)
             # Filter out images that get either correct predictions or non-decreasing loss,
             # i.e., only images that are both misclassified and loss-decreasing are left
             
             mask = condition * (best_L2 > current_L2.detach())
-            flipped_mask = torch.logical_or(mask, flipped_mask)
+            #print("Best l2", best_L2)
+            #print("current l2,", current_L2)
             best_L2 = mask * current_L2.detach() + (1 - mask) * best_L2
             mask = mask.view([-1] + [1] * (dim - 1))
+            #print("Mask", mask)
             best_adv_images = mask * adv_images.detach() + (1 - mask) * best_adv_images
 
             # Early stop when loss does not converge.
             # max(.,1) To prevent MODULO BY ZERO error in the next step.
-            """
-            if step % max(self.steps // 10, 1) == 0:
-                if cost.item() > prev_cost:
-                    best_adv_images = best_adv_images.detach().cpu()
-                    return best_adv_images, images.cpu()
-                prev_cost = cost.item()
-            """
-            
-        # Only return successful adversarial samples
-        flipped_indices = torch.where(flipped_mask == True)[0]
-        flipped_indices = flipped_indices.detach().cpu()
+            #if step % max(self.steps // 10, 1) == 0:
+                #if cost.item() > prev_cost:
+                    #best_adv_images = best_adv_images.detach().cpu()
+                    #adv_images = adv_images.detach().cpu()
+                    #return best_adv_images, images.detach().cpu()
+                #prev_cost = cost.item()
         best_adv_images = best_adv_images.detach().cpu()
-        
-        return best_adv_images, images.cpu(), flipped_indices
+        adv_images = adv_images.detach().cpu()
+       
+        return best_adv_images, images.detach().cpu()
 
     def tanh_space(self, x):
         return 1 / 2 * (torch.tanh(x) + 1)
@@ -184,6 +178,7 @@ class CW_RBF(Attack):
 
     def atanh(self, x):
         return 0.5 * torch.log((1 + x) / (1 - x))
+    
 
     # f-function in the paper
     def f(self, outputs, labels):
@@ -197,3 +192,7 @@ class CW_RBF(Attack):
             return torch.clamp((other - real), min=-self.kappa)
         else:
             return torch.clamp((real - other), min=-self.kappa)
+
+    def quantize(self, X):
+        X[0] = torch.where(X[0] > 0, torch.ones_like(X[0]), torch.zeros_like(X[0]))
+        return X

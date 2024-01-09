@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import sys
-from ..attack_rbf_included import Attack
+from ..attack import Attack
 
 class CW_RBF(Attack):
     r"""
@@ -71,7 +71,8 @@ class CW_RBF(Attack):
         Flatten = nn.Flatten()
 
         optimizer = optim.Adam([w], lr=self.lr)
-
+        flipped_mask = torch.zeros(images.shape[0], dtype=torch.bool).to(self.device)
+        rbf_mask = torch.zeros(images.shape[0], dtype=torch.bool).to(self.device)
         for step in range(self.steps):
             print("On step : ", step)
             # Get adversarial images
@@ -83,7 +84,16 @@ class CW_RBF(Attack):
             # rbf loss
             rbf_preds = self.rbf(relu_feats)
             red_indices = torch.where(rbf_preds > 0)[0]
+        
+        
             rbf_loss = MSELoss_svm(rbf_preds, target_scores)
+            
+            if step > 10:
+                rbf_t_mask = rbf_preds > 0
+                rbf_mask = torch.logical_or(rbf_t_mask, rbf_mask)
+                tot_fl = rbf_mask.sum()
+                #print("Tot flipped : ", tot_fl)            
+            
             rbf_loss[red_indices] = 0
             rbf_loss = rbf_loss.sum()            
             #print("Tot Succ samples: ", len(red_indices))
@@ -93,10 +103,9 @@ class CW_RBF(Attack):
             else:
                 f_loss = self.f(outputs, labels).sum()
 
-            #cost_og = L2_loss + self.c * f_loss
-            cost = L2_loss + self.c * f_loss + 0.03*rbf_loss 
-            #cost = L2_loss + self.c * f_loss + self.d*rbf_loss
-            #cost = L2_loss + self.c * f_loss
+
+            cost = L2_loss + self.c * f_loss + self.d * rbf_loss 
+            
             print("L2_loss: ",  L2_loss.item())
             print("rbf_loss: ",  rbf_loss.item())
             print("f_loss: ",  f_loss.item())
@@ -116,11 +125,14 @@ class CW_RBF(Attack):
             else:
                 # If the attack is not targeted we simply make these two values unequal
                 condition = (pre != labels).float()
+                rbf_condition = rbf_preds > 0 
+                condition = condition * rbf_condition
 
             # Filter out images that get either correct predictions or non-decreasing loss,
             # i.e., only images that are both misclassified and loss-decreasing are left
             
             mask = condition * (best_L2 > current_L2.detach())
+            flipped_mask = torch.logical_or(mask, flipped_mask)
 
             best_L2 = mask * current_L2.detach() + (1 - mask) * best_L2
             mask = mask.view([-1] + [1] * (dim - 1))
@@ -128,6 +140,7 @@ class CW_RBF(Attack):
 
             # Early stop when loss does not converge.
             # max(.,1) To prevent MODULO BY ZERO error in the next step.
+            """
             if step % max(self.steps // 10, 1) == 0:
                 if cost.item() > prev_cost:
                     best_adv_images = best_adv_images.detach().cpu()
@@ -135,11 +148,16 @@ class CW_RBF(Attack):
                     #return best_adv_images, images.detach().cpu()
                     return adv_images, images.detach().cpu()
                 prev_cost = cost.item()
+            """
+        # Only return successful adversarial samples
+        flipped_indices = torch.where(flipped_mask == True)[0]
+        #best_adv_images = best_adv_images[flipped_indices]
+        #images = images[flipped_indices]
+        #sub_labels = labels.detach()[flipped_indices].cpu()
+        flipped_indices = flipped_indices.detach().cpu()
         best_adv_images = best_adv_images.detach().cpu()
-        adv_images = adv_images.detach().cpu()
-       
-        return adv_images, images.detach().cpu()
-        #return best_adv_images, images.cpu()
+        adv_images = adv_images.detach().cpu()       
+        return best_adv_images, images.detach().cpu(), flipped_indices
 
     def tanh_space(self, x):
         return 1 / 2 * (torch.tanh(x) + 1)

@@ -228,7 +228,7 @@ if args.train:
 
 
     # Save rbf model
-    rbf_config = f"RBF_{args.attack}_{args.total_train_samples}_{args.detector_type}.pkl" 
+    rbf_config = f"RBF_{args.attack}_{args.total_train_samples}_{args.detector_type}_{args.c}.pkl" 
     rbf_path = os.path.join(expr_dir, "RBF", rbf_config)
 
     with open(rbf_path,'wb') as f:
@@ -275,7 +275,7 @@ else:
     X, y = unison_shuffled_copies_ind(test_data[0], test_data[1])
 
     # Loading svm
-    rbf_config = f"RBF_{args.attack}_{args.total_train_samples}_{args.detector_type}.pkl"
+    rbf_config = f"RBF_{args.attack}_{args.total_train_samples}_{args.detector_type}_{args.c}.pkl"
     rbf_path = os.path.join(expr_dir, "RBF", rbf_config)
     with open(rbf_path,'rb') as in_model:
         clf = pickle.load(in_model)

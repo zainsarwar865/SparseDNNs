@@ -47,7 +47,7 @@ class CW(Attack):
         r"""
         Overridden.
         """
-
+        print("C value is : ", self.c)
         images = images.clone().detach().to(self.device)
         #print("Inside forward", images[0])
         labels = labels.clone().detach().to(self.device)
@@ -69,6 +69,8 @@ class CW(Attack):
         Flatten = nn.Flatten()
 
         optimizer = optim.Adam([w], lr=self.lr)
+
+        flipped_mask = torch.zeros(images.shape[0], dtype=torch.bool).to(self.device)
 
         for step in range(self.steps):
             # Get adversarial images
@@ -106,24 +108,35 @@ class CW(Attack):
             else:
                 # If the attack is not targeted we simply make these two values unequal
                 condition = (pre != labels).float()
+                #print(torch.sum(condition), condition.shape)
             # Filter out images that get either correct predictions or non-decreasing loss,
             # i.e., only images that are both misclassified and loss-decreasing are left
             
             mask = condition * (best_L2 > current_L2.detach())
+            flipped_mask = torch.logical_or(mask, flipped_mask)
             best_L2 = mask * current_L2.detach() + (1 - mask) * best_L2
             mask = mask.view([-1] + [1] * (dim - 1))
             best_adv_images = mask * adv_images.detach() + (1 - mask) * best_adv_images
 
             # Early stop when loss does not converge.
             # max(.,1) To prevent MODULO BY ZERO error in the next step.
+            """
             if step % max(self.steps // 10, 1) == 0:
                 if cost.item() > prev_cost:
                     best_adv_images = best_adv_images.detach().cpu()
                     return best_adv_images, images.cpu()
                 prev_cost = cost.item()
+            """
 
+        #adv_images = adv_images.detach().cpu()
+        # Only return successful adversarial samples
+        flipped_indices = torch.where(flipped_mask == True)[0]
+        #best_adv_images = best_adv_images[flipped_indices]
+        #images = images[flipped_indices]
+        #sub_labels = labels.detach()[flipped_indices].cpu()
+        flipped_indices = flipped_indices.detach().cpu()
         best_adv_images = best_adv_images.detach().cpu()
-        return best_adv_images, images.cpu()
+        return best_adv_images, images.cpu(), flipped_indices
 
     def tanh_space(self, x):
         return 1 / 2 * (torch.tanh(x) + 1)

@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from ..attack import Attack
+from ..attack_hooks import Attack
 
 
 class BinarizeWithSigmoidGradient(torch.autograd.Function):
@@ -22,7 +22,10 @@ class BinarizeWithSigmoidGradient(torch.autograd.Function):
         """
         input, = ctx.saved_tensors
         sigmoid = torch.nn.Sigmoid()  # Apply sigmoid for smooth gradient approximation
-        return grad_output * sigmoid(input) * (1 - sigmoid(input))
+        ret_grads = grad_output * sigmoid(input) * (1 - sigmoid(input))
+        l2_mean = torch.linalg.norm(ret_grads, dim=1).mean()
+        print(f"L2 mean grad threshold: {l2_mean}")
+        return ret_grads
 
 
 
@@ -84,6 +87,9 @@ class CW_RBF(Attack):
         # w = torch.zeros_like(images).detach() # Requires 2x times
         w = self.inverse_tanh_space(images).detach()
         w.requires_grad = True
+        w_mean = None
+        self.pool_grads = None
+
 
         best_adv_images = images.clone().detach()
         best_L2 = 1e10 * torch.ones((len(images))).to(self.device)
@@ -103,7 +109,13 @@ class CW_RBF(Attack):
             # Get adversarial images
             print("On step : ", step)
             adv_images = self.tanh_space(w)
+            if step > 0:
+                grad = torch.linalg.norm(w.grad).unsqueeze(0)
+                if isinstance(w_mean, torch.Tensor):
+                    w_mean = torch.concatenate((w_mean, grad))
 
+                else:
+                    w_mean = grad
             # Calculate loss
             current_L2 = MSELoss(Flatten(adv_images), Flatten(images)).sum(dim=1)
             L2_loss = current_L2.sum()
@@ -123,8 +135,9 @@ class CW_RBF(Attack):
             else:
                 f_loss = self.f(outputs, labels).sum()
 
-            cost = L2_loss + self.c * f_loss
+            #cost = L2_loss + self.c * f_loss
             cost = L2_loss + self.c * f_loss + self.d*rbf_loss
+            #cost = L2_loss + self.d*rbf_loss
             #cost = L2_loss 
             print("L2_loss: ",  L2_loss.item())
             print("f_loss: ",  f_loss.item())
@@ -171,7 +184,10 @@ class CW_RBF(Attack):
         flipped_indices = torch.where(flipped_mask == True)[0]
         flipped_indices = flipped_indices.detach().cpu()
         best_adv_images = best_adv_images.detach().cpu()
-        
+        print(f"W_mean : {w_mean.mean()}")
+        pool_grads_mean  = torch.linalg.norm(self.pool_grads, dim=1).mean()
+        print(f"pool_grads_mean : {pool_grads_mean}")
+        #print("Mean grad in : ", grad)
         return best_adv_images, images.cpu(), flipped_indices
 
     def tanh_space(self, x):
