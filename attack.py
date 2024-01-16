@@ -14,6 +14,8 @@ parser.add_argument('--model', type=str)
 parser.add_argument('--lr', dest='lr', type=float)
 parser.add_argument('--c', type=float)
 parser.add_argument('--d', type=float)
+parser.add_argument('--c_attack', type=float)
+parser.add_argument('--d_attack', type=float)
 parser.add_argument('--steps',  type=int)
 parser.add_argument('--attack',  type=str)
 parser.add_argument('--momentum', default=0.9, type=float, metavar='M')
@@ -227,10 +229,10 @@ all_flipped_indices = None
 
 if args.integrated:
     if args.attack == "CW":
-        atk = CW(model, rbf_svm, c=args.c, d=args.d,  steps=args.steps, lr=args.lr)
+        atk = CW(model, rbf_svm, c=args.c_attack, d=args.d_attack,  steps=args.steps, lr=args.lr)
 else:     
     if args.attack == "CW":
-        atk = CW(model, c=args.c, steps=args.steps, lr=args.lr)
+        atk = CW(model, c=args.c_attack, steps=args.steps, lr=args.lr)
 
 #atk.set_normalization_used(mean=[0.4914, 0.4822, 0.4465], std=[0.247, 0.243, 0.261])
 
@@ -246,7 +248,6 @@ for bn, (images, labels) in enumerate(dataloader):
         all_labels = torch.concat((all_labels, labels), dim=0)
     else:
         all_labels = labels
-
     if isinstance(all_flipped_indices, torch.Tensor):
         flipped_indices = flipped_indices + (args.batch_size * bn)
         all_flipped_indices = torch.concat((all_flipped_indices, flipped_indices), dim=0)
@@ -254,7 +255,7 @@ for bn, (images, labels) in enumerate(dataloader):
         all_flipped_indices = flipped_indices
 
 # Save adversarial images
-image_save_config = f"Adversarial_Datasets/{args.attack}_adv_samples_{args.total_attack_samples}_{args.attack_split}_detector-type-{args.detector_type}_integrated-{args.integrated}_c-{args.c}_d-{args.d}.pickle"
+image_save_config = f"Adversarial_Datasets/{args.attack}_adv_samples_{args.total_attack_samples}_{args.attack_split}_detector-type-{args.detector_type}_integrated-{args.integrated}_c-{args.c_attack}_d-{args.d_attack}.pickle"
 image_save_path  = os.path.join(expr_dir, image_save_config)
 
 adv_dataset = [all_adv_images, all_labels]
@@ -262,13 +263,13 @@ ben_dataset = [all_og_images, all_labels]
 with open(image_save_path, 'wb') as out_dataset:
     pickle.dump(adv_dataset, out_dataset)
 
-image_save_config = f"Benign_Datasets/{args.attack}_benign_samples_{args.total_attack_samples}_{args.attack_split}_detector-type-{args.detector_type}_integrated-{args.integrated}_c-{args.c}_d-{args.d}.pickle"
+image_save_config = f"Benign_Datasets/{args.attack}_benign_samples_{args.total_attack_samples}_{args.attack_split}_detector-type-{args.detector_type}_integrated-{args.integrated}_c-{args.c_attack}_d-{args.d_attack}.pickle"
 image_save_path  = os.path.join(expr_dir, image_save_config)
 
 with open(image_save_path, 'wb') as out_dataset:
     pickle.dump(ben_dataset, out_dataset)
 
-perturbed_indices_save_config = f"Predictions/Perturbed_Samples/{args.attack}_benign_samples_{args.total_attack_samples}_{args.attack_split}_detector-type-{args.detector_type}_integrated-{args.integrated}_c-{args.c}_d-{args.d}.pt"
+perturbed_indices_save_config = f"Predictions/Perturbed_Samples/{args.attack}_benign_samples_{args.total_attack_samples}_{args.attack_split}_detector-type-{args.detector_type}_integrated-{args.integrated}_c-{args.c_attack}_d-{args.d_attack}.pt"
 perturbed_indices_save_path  = os.path.join(expr_dir, perturbed_indices_save_config)
 
 torch.save(all_flipped_indices, perturbed_indices_save_path)
@@ -281,9 +282,3 @@ print(f"Total samples : {total_samples}")
 print(f"Total flipped : {total_flipped}")
 print(f"ASR : {asr}")
 print("Attack completed...")
-
-
-
-
-
-

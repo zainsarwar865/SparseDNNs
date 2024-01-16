@@ -506,9 +506,9 @@ class Attack(object):
             adv_inputs = self.normalize(adv_inputs)
             self._set_normalization_applied(True)
         else:
-            adv_inputs, og_inputs = self.forward(inputs, labels, *args, **kwargs)
+            adv_inputs, og_inputs, flipped_indices = self.forward(inputs, labels, *args, **kwargs)
         self._recover_model_mode(given_training)
-        return adv_inputs, og_inputs
+        return adv_inputs, og_inputs, flipped_indices
     
     def __repr__(self):
         info = self.__dict__.copy()

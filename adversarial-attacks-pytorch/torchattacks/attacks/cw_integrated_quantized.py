@@ -123,9 +123,8 @@ class CW_RBF(Attack):
             else:
                 f_loss = self.f(outputs, labels).sum()
 
-            cost = L2_loss + self.c * f_loss
             cost = L2_loss + self.c * f_loss + self.d*rbf_loss
-            #cost = L2_loss 
+
             print("L2_loss: ",  L2_loss.item())
             print("f_loss: ",  f_loss.item())
             print("rbf_loss: ",  rbf_loss.item())
@@ -145,7 +144,7 @@ class CW_RBF(Attack):
             else:
                 # If the attack is not targeted we simply make these two values unequal
                 condition = (pre != labels).float()
-                rbf_condition = rbf_preds > 0 
+                rbf_condition = rbf_preds > 0
                 condition = condition * rbf_condition
 
             # Filter out images that get either correct predictions or non-decreasing loss,

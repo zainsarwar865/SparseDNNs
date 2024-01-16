@@ -103,7 +103,6 @@ class CW_RBF(Attack):
             else:
                 f_loss = self.f(outputs, labels).sum()
 
-
             cost = L2_loss + self.c * f_loss + self.d * rbf_loss 
             
             print("L2_loss: ",  L2_loss.item())

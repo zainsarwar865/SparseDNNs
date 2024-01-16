@@ -69,14 +69,11 @@ def load_data(path, label):
     y.fill(label)
     return [features_matrix, y]
 
-    
-
-
 def unison_shuffled_copies_ind(X, y):
     assert len(X) == len(y)
     p = np.random.permutation(len(X))
-    return X[p], y[p]
-
+    return X, y
+    
 def unison_shuffled_copies(x_ben, y_ben, x_adv, y_adv):
     X = np.concatenate((x_ben, x_adv), axis=0)
     y = np.concatenate((y_ben, y_adv), axis=0)
@@ -243,8 +240,6 @@ else:
     flipped_indices_path = os.path.join(expr_dir, flipped_indices_config)
     flipped_indices = torch.load(flipped_indices_path)
 
-
-
     if args.test_type == 'benign':
         logging_path = os.path.join(expr_dir,f"test_rbf_integrated_type-{args.test_type}-detector-type-{args.detector_type}_c-{args.c}_d-{args.d}.log")
         _,__,test_path,____ = get_paths(expr_dir)
@@ -271,6 +266,7 @@ else:
     logger.setLevel(logging.INFO)
 
     # Label
+    print("Data path is , ", test_path)
 
     X, y = unison_shuffled_copies_ind(test_data[0], test_data[1])
 
@@ -284,7 +280,7 @@ else:
     x_pred = clf.predict(X)
     acc = len(np.where(x_pred == y)[0]) / len(X)
     logger.critical(f"Raw Acc : {acc}")
-    #print("Raw Accuracy : ", acc)
+    print("Raw Accuracy : ", acc)
 
     x_pred_scores = clf.decision_function(X)
 
@@ -292,6 +288,23 @@ else:
     predictions['true_labels'] = y
     predictions['pred_labels'] = x_pred
     predictions['pred_scores'] = x_pred_scores
+
+
+    print("Thresholded accuracy")
+    # Alternative acc
+    x_pred_scores_thresholded = clf.decision_function(X)
+    predictions['pred_scores_thresholded'] = x_pred_scores_thresholded
+    pos_indices = np.where(x_pred_scores_thresholded > 0)[0]
+    neg_indices = np.where(x_pred_scores_thresholded <= 0)[0]
+    x_pred_scores_thresholded[pos_indices] = 1
+    x_pred_scores_thresholded[neg_indices] = -1
+    acc = len(np.where(x_pred_scores_thresholded == y)[0]) / len(X)
+    logger.critical(f"Thresholded accuracy : {acc}")
+    print("Thresholded accuracy : ", acc)
+
+
+
+
     # Save RBF preds
     preds_config = f"Predictions/RBF/{args.attack}_type-{args.test_type}_{args.total_attack_samples}_test_detector-type-{args.detector_type}_integrated-{args.integrated}_rbf_c-{args.c}_d-{args.d}.pickle"
     preds_path = os.path.join(expr_dir, preds_config)
@@ -307,4 +320,16 @@ else:
     acc = len(np.where(x_pred == y)[0]) / len(X)
     logger.critical(f"Filtered Acc : {acc}")
     print("Filtered Accuracy : ", acc)
+
+    print("Filtered thresholded accuracy")
+    # Alternative acc
+    x_pred_scores = clf.decision_function(X)
+    pos_indices = np.where(x_pred_scores > 0)[0]
+    neg_indices = np.where(x_pred_scores <= 0)[0]
+    x_pred_scores[pos_indices] = 1
+    x_pred_scores[neg_indices] = -1
+    acc = len(np.where(x_pred_scores == y)[0]) / len(X)
+    logger.critical(f"Raw Acc : {acc}")
+    print("Raw Accuracy : ", acc)
+
 
