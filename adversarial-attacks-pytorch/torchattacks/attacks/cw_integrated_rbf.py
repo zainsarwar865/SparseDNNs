@@ -4,7 +4,7 @@ import torch.optim as optim
 import sys
 from ..attack import Attack
 
-class CW_MLP(Attack):
+class CW_RBF(Attack):
     r"""
     CW in the paper 'Towards Evaluating the Robustness of Neural Networks'
     [https://arxiv.org/abs/1608.04644]
@@ -35,7 +35,7 @@ class CW_MLP(Attack):
 
     """
 
-    def __init__(self, model, mlp, c=1, d=0.001,kappa=0, steps=50, lr=0.01):
+    def __init__(self, model, rbf, c=1, d=0.001,kappa=0, steps=50, lr=0.01):
         super().__init__("CW", model)
         self.c = c
         self.d = d
@@ -43,7 +43,7 @@ class CW_MLP(Attack):
         self.steps = steps
         self.lr = lr
         self.supported_mode = ["default", "targeted"]
-        self.mlp = mlp
+        self.rbf = rbf
 
 
     def forward(self, images, labels):
@@ -62,7 +62,7 @@ class CW_MLP(Attack):
 
         best_adv_images = images.clone().detach()
         best_L2 = 1e10 * torch.ones((len(images))).to(self.device)
-        #target_scores = torch.ones((len(images))).to(self.device).double()
+        target_scores = torch.ones((len(images))).to(self.device).double()
         prev_cost = 1e10
         dim = len(images.shape)
 
@@ -72,7 +72,7 @@ class CW_MLP(Attack):
 
         optimizer = optim.Adam([w], lr=self.lr)
         flipped_mask = torch.zeros(images.shape[0], dtype=torch.bool).to(self.device)
-        mlp_mask = torch.zeros(images.shape[0], dtype=torch.bool).to(self.device)
+        rbf_mask = torch.zeros(images.shape[0], dtype=torch.bool).to(self.device)
         for step in range(self.steps):
             print("On step : ", step)
             # Get adversarial images
@@ -82,26 +82,20 @@ class CW_MLP(Attack):
             L2_loss = current_L2.sum()
             outputs, relu_feats = self.get_logits(adv_images)
             # rbf loss
-            mlp_preds = self.mlp(relu_feats)
-            
-            mlp_pred_cw = torch.clamp(mlp_preds[:, 1] - mlp_preds[:, 0], 0)
+            rbf_preds = self.rbf(relu_feats)
+            red_indices = torch.where(rbf_preds > 0)[0]
         
-            mlp_labels = torch.argmax(mlp_preds, dim=1)
+        
+            rbf_loss = MSELoss_svm(rbf_preds, target_scores)
             
-            red_indices = torch.where(mlp_labels == 0)[0]
-            print("Pos results are: ", red_indices.shape)
-            print("Batch size is ", mlp_preds.shape)
-
-    
-            #rbf_loss = MSELoss_svm(rbf_preds, target_scores)
-            mlp_loss = mlp_pred_cw.sum()
-
             if step > 10:
-                mlp_t_mask = mlp_pred_cw >= 0
-                mlp_mask = torch.logical_or(mlp_t_mask, mlp_mask)
-
-
-        
+                rbf_t_mask = rbf_preds > 0
+                rbf_mask = torch.logical_or(rbf_t_mask, rbf_mask)
+                tot_fl = rbf_mask.sum()
+                #print("Tot flipped : ", tot_fl)            
+            
+            rbf_loss[red_indices] = 0
+            rbf_loss = rbf_loss.sum()            
             #print("Tot Succ samples: ", len(red_indices))
             #print("Tot samples in batch : ", rbf_preds.shape)
             if self.targeted:
@@ -109,10 +103,10 @@ class CW_MLP(Attack):
             else:
                 f_loss = self.f(outputs, labels).sum()
 
-            cost = L2_loss + self.c * f_loss + self.d * mlp_loss 
+            cost = L2_loss + self.c * f_loss + self.d * rbf_loss 
             
             print("L2_loss: ",  L2_loss.item())
-            print("mlp_loss: ",  mlp_loss.item())
+            print("rbf_loss: ",  rbf_loss.item())
             print("f_loss: ",  f_loss.item())
             print("--------------------")
             print("cost: ",  cost.item())
@@ -130,8 +124,8 @@ class CW_MLP(Attack):
             else:
                 # If the attack is not targeted we simply make these two values unequal
                 condition = (pre != labels).float()
-                mlp_condition = mlp_pred_cw > 0 
-                condition = condition * mlp_condition
+                rbf_condition = rbf_preds > 0 
+                condition = condition * rbf_condition
 
             # Filter out images that get either correct predictions or non-decreasing loss,
             # i.e., only images that are both misclassified and loss-decreasing are left

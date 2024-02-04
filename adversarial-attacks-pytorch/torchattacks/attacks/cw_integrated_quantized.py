@@ -3,30 +3,26 @@ import torch.nn as nn
 import torch.optim as optim
 from ..attack import Attack
 
-
 class BinarizeWithSigmoidGradient(torch.autograd.Function):
     @staticmethod
     def forward(ctx, input):
-        """
-        Forward pass: Binarizes the input tensor
-        """
-        #output = torch.zeros_like(input)
-        #output[input > 0] = 1.0
+
+        #Forward pass: Binarizes the input tensor        
         output = torch.where(input > 0, torch.ones_like(input), torch.zeros_like(input))
         ctx.save_for_backward(input)  # Save input for gradient calculation
         return output
+        
     @staticmethod
     def backward(ctx, grad_output):
-        """
-        Backward pass: Calculates gradients using a sigmoid approximation
-        """
-        input, = ctx.saved_tensors
-        sigmoid = torch.nn.Sigmoid()  # Apply sigmoid for smooth gradient approximation
-        return grad_output * sigmoid(input) * (1 - sigmoid(input))
+        
+        #Backward pass: Calculates gradients using a sigmoid approximation
+        input = ctx.saved_tensors
+        sigmoid = torch.nn.Sigmoid()(input[0])
+        out = grad_output * sigmoid * (1 - sigmoid)
+        return out
 
 
-
-class CW_RBF(Attack):
+class CW_MLP(Attack):
     r"""
     CW in the paper 'Towards Evaluating the Robustness of Neural Networks'
     [https://arxiv.org/abs/1608.04644]
@@ -57,17 +53,16 @@ class CW_RBF(Attack):
 
     """
 
-    def __init__(self, model, rbf, c=1, d=0.1, kappa=0, steps=50, lr=0.01):
+    def __init__(self, model, mlp, c=1, d=0.1, kappa=0, steps=50, lr=0.01):
         super().__init__("CW", model)
         self.c = c
         self.kappa = kappa
         self.steps = steps
         self.lr = lr
         self.supported_mode = ["default", "targeted"]
-        self.rbf = rbf
+        self.mlp = mlp
         self.d = d
         self.quantizer = BinarizeWithSigmoidGradient.apply
-        #self.set_mode_targeted_random()
 
     def forward(self, images, labels):
         r"""
@@ -87,12 +82,10 @@ class CW_RBF(Attack):
 
         best_adv_images = images.clone().detach()
         best_L2 = 1e10 * torch.ones((len(images))).to(self.device)
-        target_scores = torch.ones((len(images))).to(self.device).double()
         prev_cost = 1e10
         dim = len(images.shape)
 
         MSELoss = nn.MSELoss(reduction="none")
-        MSELoss_svm = nn.MSELoss(reduction="none")
         Flatten = nn.Flatten()
 
         optimizer = optim.Adam([w], lr=self.lr)
@@ -109,28 +102,37 @@ class CW_RBF(Attack):
             L2_loss = current_L2.sum()
         
             outputs, relu_feats = self.get_logits(adv_images)
+            #x6, x4, x3 = relu_feats
+            #x4 = x4.squeeze()
+            #x3 = x3.reshape(x3.shape[0], -1)
+            #x3 = x3[:, ::2]
+            #relu_feats = torch.concat((x6, x4, x3), dim=1)
             relus_quantized = self.quantizer(relu_feats)
             # rbf loss
-            rbf_preds = self.rbf(relus_quantized)
-            red_indices = torch.where(rbf_preds > 0)[0]
+            mlp_preds = self.mlp(relus_quantized)
+            mlp_pred_cw = torch.clamp(mlp_preds[:, 1] - mlp_preds[:, 0], 0)
+        
+            mlp_labels = torch.argmax(mlp_preds, dim=1)
+            
+            red_indices = torch.where(mlp_labels == 0)[0]
             print("Pos results are: ", red_indices.shape)
-            print("Batch size is ", rbf_preds.shape)
-            rbf_loss = MSELoss_svm(rbf_preds, target_scores)
-            rbf_loss[red_indices] = 0
-            rbf_loss = rbf_loss.sum()           
+            print("Batch size is ", mlp_preds.shape)
+            mlp_loss = mlp_pred_cw.sum()
             if self.targeted:
                 f_loss = self.f(outputs, target_labels).sum()
             else:
                 f_loss = self.f(outputs, labels).sum()
 
-            cost = L2_loss + self.c * f_loss + self.d*rbf_loss
+            cost = L2_loss + self.c * f_loss + self.d* mlp_loss
 
             print("L2_loss: ",  L2_loss.item())
             print("f_loss: ",  f_loss.item())
-            print("rbf_loss: ",  rbf_loss.item())
+            print("mlp_loss: ", mlp_loss.item())
             print("--------------------")
             print("cost: ",  cost.item())
             print("--------------------")
+
+
 
             optimizer.zero_grad()
             cost.backward()
@@ -144,8 +146,8 @@ class CW_RBF(Attack):
             else:
                 # If the attack is not targeted we simply make these two values unequal
                 condition = (pre != labels).float()
-                rbf_condition = rbf_preds > 0
-                condition = condition * rbf_condition
+                mlp_condition = mlp_pred_cw > 0
+                condition = condition * mlp_condition
 
             # Filter out images that get either correct predictions or non-decreasing loss,
             # i.e., only images that are both misclassified and loss-decreasing are left

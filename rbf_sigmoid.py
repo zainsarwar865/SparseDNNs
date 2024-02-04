@@ -101,9 +101,13 @@ def get_paths(base_path):
 
 def quantize(X):
     X[0] = torch.where(X[0] > 0, torch.ones_like(X[0]), torch.zeros_like(X[0]))
-    
+
     return X
 
+def sigmoid_fn(X):
+    sig = torch.nn.Sigmoid()
+    X[0] = sig(X[0])
+    return X
 
 
 best_acc1 = 0
@@ -166,7 +170,13 @@ if args.train:
         train_adversarial = quantize(train_adversarial)
         test_benign = quantize(test_benign)
         test_adversarial = quantize(test_adversarial)
-
+    
+    elif args.detector_type == 'Regular':
+        print("Sigmoiding the ReLUs")
+        train_benign = sigmoid_fn(train_benign)
+        train_adversarial = sigmoid_fn(train_adversarial)
+        test_benign = sigmoid_fn(test_benign)
+        test_adversarial = sigmoid_fn(test_adversarial)
 
     X_train, y_train = unison_shuffled_copies(train_benign[0], train_benign[1], train_adversarial[0], train_adversarial[1])
 
@@ -255,6 +265,11 @@ else:
     if args.detector_type == 'Quantized':
         print("Quantizing the ReLUs")
         test_data = quantize(test_data)
+    
+    if args.detector_type == 'Regular':
+        print("Sigmoiding the ReLUs")
+        test_data = sigmoid_fn(test_data)
+
 
     logging.basicConfig(filename=logging_path,
                         format='%(asctime)s %(message)s',

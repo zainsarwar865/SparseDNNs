@@ -4,10 +4,10 @@ RUN_ATTACK=false
 TEST=false
 FEATURE_EXTRACTION_BENIGN=false
 FEATURE_EXTRACTION_ADVERSARIAL=false
-TRAIN_MLP=false
+TRAIN_RBF=false
 TEST_MT_INTEGRATED_PREATTACK=false
-RUN_ATTACK_INTEGRATED=false
-TEST_INTEGRATED_ADVERSARIAL=true
+RUN_ATTACK_INTEGRATED=true
+TEST_INTEGRATED_ADVERSARIAL=false
 
 #echo $y
 BashName=${0##*/}
@@ -22,9 +22,16 @@ seed=42
 attack="CW"
 detector_type="Regular" # Regular
 
+C=0.6
+gamma=0.5
 c_base=0.1
 d_base=0
 
+if [ "$detector_type" = 'Quantized' ]
+then
+    C=0.3
+    gamma=0.001
+fi
 
 # Setup the directory for an experiment
 #############################################################################################
@@ -32,7 +39,7 @@ d_base=0
 # MT Root parameters
 base_dir='/bigstor/zsarwar/SparseDNNs'
 mt_dataset="CIFAR10"
-mt_config="full_mlp"
+mt_config="full"
 mt_classes=10
 # root_config --> subset
 # Hash configs
@@ -147,7 +154,7 @@ then
     if [ "$RUN_ATTACK_TRAIN" = true ]
     then
         cd ${home_dir}
-        python3 attack.py \
+        python3 attack_sigmoid.py \
         --gpu=$gpu \
         --base_dir=$base_dir \
         --root_hash_config=$root_hash_config \
@@ -168,8 +175,7 @@ then
         --total_attack_samples=$total_attack_samples_train \
         --num_classes=$num_classes \
         --integrated=$integrated \
-        --trainer_type=$trainer_type \
-
+        --trainer_type=$trainer_type
     fi
 
 
@@ -178,7 +184,7 @@ then
     if [ "$RUN_ATTACK_TEST" = true ]
     then
         cd ${home_dir}
-        python3 attack.py \
+        python3 attack_sigmoid.py \
         --gpu=$gpu \
         --base_dir=$base_dir \
         --root_hash_config=$root_hash_config \
@@ -539,10 +545,10 @@ fi
 #############################################################################################
 # Train RBF Kernel
 train='True'
-if [ "$TRAIN_MLP" = true ]
+if [ "$TRAIN_RBF" = true ]
 then
     cd ${home_dir}
-    python3 mlp.py \
+    python3 rbf_sigmoid.py \
     --gpu=$gpu \
     --base_dir=$base_dir \
     --root_hash_config=$root_hash_config \
@@ -556,13 +562,11 @@ then
     --total_attack_samples=$total_attack_samples_test \
     --total_train_samples=$total_attack_samples_train \
     --train=$train \
+    --C=$C \
+    --gamma=$gamma \
     --c=$c_base \
-    --d=$d_base \
-    --epochs=100 \
-    --batch_size=$batch_size \
-    --lr=$lr \
-    --weight_decay=$weight_decay \
-    --gpu=$gpu
+    --d=$d_base
+
 fi
 
 
@@ -660,7 +664,7 @@ train=False
         # Test RBF Kernel
         train='False'
         cd ${home_dir}
-        python3 mlp.py \
+        python3 rbf_sigmoid.py \
         --gpu=$gpu \
         --base_dir=$base_dir \
         --root_hash_config=$root_hash_config \
@@ -676,12 +680,9 @@ train=False
         --integrated=$integrated \
         --detector_type=$detector_type \
         --c=$c_base \
-        --d=$d_base \
-        --epochs=100 \
-        --batch_size=$batch_size \
-        --lr=$lr \
-        --weight_decay=$weight_decay \
-        --gpu=$gpu
+        --d=$d_base
+
+
 
 
         test_type=benign
@@ -766,7 +767,7 @@ train=False
         # Test RBF Kernel
         train='False'
         cd ${home_dir}
-        python3 mlp.py \
+        python3 rbf_sigmoid.py \
         --gpu=$gpu \
         --base_dir=$base_dir \
         --root_hash_config=$root_hash_config \
@@ -782,12 +783,7 @@ train=False
         --integrated=$integrated \
         --detector_type=$detector_type \
         --c=$c_base \
-        --d=$d_base \
-        --epochs=100 \
-        --batch_size=$batch_size \
-        --lr=$lr \
-        --weight_decay=$weight_decay \
-        --gpu=$gpu
+        --d=$d_base
     fi
 
 
@@ -798,14 +794,14 @@ train=False
 # Attack parameters
 
 original_dataset=cifar10
-c_attack=0.3
-d_attack=0.0
+c_attack=0.2
+d_attack=0.1
 
 # Quantized
 if [ "$detector_type" = 'Quantized' ]
 then
-    c_attack=0.3
-    d_attack=0.3
+    c_attack=0.1
+    d_attack=0.1
 
 fi
 
@@ -822,7 +818,7 @@ extract_type=$test_type
 if [ "$RUN_ATTACK_INTEGRATED" = true ]
 then
     cd ${home_dir}
-    python3 attack.py \
+    python3 attack_sigmoid.py \
     --gpu=$gpu \
     --base_dir=$base_dir \
     --root_hash_config=$root_hash_config \
@@ -932,7 +928,7 @@ then
 
     # Test RBF
     cd ${home_dir}
-    python3 mlp.py \
+    python3 rbf_sigmoid.py \
     --gpu=$gpu \
     --base_dir=$base_dir \
     --root_hash_config=$root_hash_config \
@@ -948,12 +944,7 @@ then
     --integrated=$integrated \
     --detector_type=$detector_type \
     --c=$c_attack \
-    --d=$d_attack \
-    --epochs=100 \
-    --batch_size=$batch_size \
-    --lr=$lr \
-    --weight_decay=$weight_decay \
-    --gpu=$gpu
+    --d=$d_attack
     
 fi
 #############################################################################################

@@ -65,7 +65,6 @@ else:
 
 
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
-args.gpu = 0
 
 import torch
 import torch.nn as nn
@@ -84,7 +83,7 @@ import matplotlib.pyplot as plt
 import pickle
 from torch.utils.data import DataLoader, Subset
 import numpy as np
-
+from utils.rbf_model import RBF_SVM
 import time
 import utils.utils as utils
 from enum import Enum
@@ -95,9 +94,9 @@ import yaml
 
 if args.integrated:
     if args.detector_type == 'Quantized':
-        from torchattacks.attacks.cw_integrated_quantized import CW_MLP as CW
+        from torchattacks.attacks.cw_integrated_quantized import CW_RBF as CW
     elif args.detector_type == 'Regular':
-        from torchattacks.attacks.cw_integrated import CW_MLP as CW
+        from torchattacks.attacks.cw_integrated import CW_RBF as CW
 else:
     from torchattacks import CW, DeepFool
 
@@ -136,8 +135,9 @@ elif args.attack_split == 'test':
                                                 shuffle=False, num_workers=args.workers)
    
 
+loc = 'cuda:{}'.format(0)
 device = 'cuda:0'
-loc = device
+
 
 # Load best checkpoint
 root_config = args.root_hash_config
@@ -154,7 +154,7 @@ if args.trainer_type == "MT_Baseline":
 expr_hash = (hashlib.md5(expr_config.encode('UTF-8')))
 expr_name = args.trainer_type + "_" + expr_hash.hexdigest()
 expr_dir = os.path.join(mt_root_directory, expr_name)
-mlp_ckpt_dir = os.path.join(expr_dir, "MLP")
+
 
 # Create and save YAML file
 expr_config_dict = {}
@@ -204,8 +204,6 @@ elif args.attack_split == 'test':
 
 print(f"Size of dataset: {len(dataloader.dataset)} ")
 
-"""
-
 if args.integrated:
     # Load RBF model
     rbf_config = f"RBF_{args.attack}_{args.total_train_samples}_{args.detector_type}_{args.c}.pkl"
@@ -220,43 +218,6 @@ if args.integrated:
 # Start attack
 #mean = (0.4914, 0.4822, 0.4465)
 #std = (0.247, 0.243, 0.261)
-"""
-# Load trained MLP
-
-if args.integrated:
-    class MLP(nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.l1 = nn.Linear(512, 1024)
-            self.l2 = nn.Linear(1024,2)
-            self.ReLU = nn.ReLU()
-        
-        def forward(self, x):
-            x = self.l1(x)
-            x = self.ReLU(x)
-            x = self.l2(x)
-            return x
-            
-    mlp = MLP()
-
-    best_ckpt_name = "model_best.pth.tar"
-    best_ckpt_path = os.path.join(mlp_ckpt_dir, best_ckpt_name)
-    if args.gpu is None:
-        checkpoint = torch.load(best_ckpt_path, map_location=loc)
-    elif torch.cuda.is_available():
-        # Map model to be loaded to specified single gpu.
-        loc = device
-        # Load best checkpoint
-        checkpoint = torch.load(best_ckpt_path, map_location=loc)
-    best_epoch = checkpoint['epoch']
-    best_acc1 = checkpoint['best_acc1']
-    best_acc1 = torch.tensor(best_acc1)
-
-    mlp.load_state_dict(checkpoint['state_dict'])
-
-    mlp = mlp.to(device=device)
-
-
 
 all_adv_images = None
 all_og_images = None
@@ -267,7 +228,7 @@ all_flipped_indices = None
 
 if args.integrated:
     if args.attack == "CW":
-        atk = CW(model, mlp, c=args.c_attack, d=args.d_attack, steps=args.steps, lr=args.lr)
+        atk = CW(model, rbf_svm, c=args.c_attack, d=args.d_attack, steps=args.steps, lr=args.lr)
 else:     
     if args.attack == "CW":
         atk = CW(model, c=args.c_attack, steps=args.steps, lr=args.lr)
