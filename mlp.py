@@ -18,6 +18,7 @@ parser.add_argument('--train', type=str)
 parser.add_argument('--test_type', type=str)
 parser.add_argument('--c', type=float)
 parser.add_argument('--d', type=float)
+parser.add_argument('--hidden_layers', type=int)
 parser.add_argument('--workers', default=4, type=int)
 parser.add_argument('--epochs', type=int)
 parser.add_argument('--start_epoch', type=int, default=0)
@@ -66,6 +67,7 @@ from sklearn.model_selection import GridSearchCV, StratifiedShuffleSplit
 import hashlib
 import torch.backends.cudnn as cudnn
 from utils.dataset import CustomImageDataset_Adv
+from utils.MLP import MLP
 
 
 
@@ -105,9 +107,6 @@ from torch.utils.data.dataloader import default_collate
 import utils.utils as utils
 import utils.configs as configs
 
-
-
-
 ###########
 
 # Set seeds
@@ -117,24 +116,12 @@ torch.manual_seed(args.seed)
 cudnn.deterministic = True
 cudnn.benchmark = False
 
-
-class MLP(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.l1 = nn.Linear(512, 1024)
-        self.l2 = nn.Linear(1024,2)
-        self.ReLU = nn.ReLU()
-    
-    def forward(self, x):
-        x = self.l1(x)
-        x = self.ReLU(x)
-        x = self.l2(x)
-        return x
-        
-
-
-def load_data(path, label):
+def load_data(path, label, flipped_indices=None):
     features_matrix = torch.load(path)
+    if isinstance(flipped_indices, torch.Tensor):
+        features_matrix = features_matrix[flipped_indices]
+        # Merge batch and pixel dimensions
+    features_matrix  = features_matrix.flatten(0,1)
     y = np.empty(features_matrix.shape[0])
     y.fill(label)
     return [features_matrix, y]
@@ -195,9 +182,9 @@ ckpt_dir = os.path.join(expr_dir, "MLP")
 
 if args.train:
 
-    logging_path = os.path.join(expr_dir,f"train_rbf_{args.detector_type}_{args.total_attack_samples}.log")
+    logging_path = os.path.join(expr_dir,f"Logs/train_mlp_detector-{args.detector_type}_{args.total_attack_samples}_Layers-{args.hidden_layers}.log")
 else:
-    logging_path = os.path.join(expr_dir,f"test_rbf_integrated_type-{args.test_type}-detector-type-{args.detector_type}_c-{args.c}_d-{args.d}.log")
+    logging_path = os.path.join(expr_dir,f"Logs/test_mlp_integrated-{args.integrated}_type-{args.test_type}-detector-type-{args.detector_type}_c-{args.c}_d-{args.d}_Layers-{args.hidden_layers}.log")
 
 logging.basicConfig(filename=logging_path,
                         format='%(asctime)s %(message)s',
@@ -255,15 +242,15 @@ def main_worker_train(gpu, ngpus_per_node, args):
     expr_config_dict = {}
     all_args = args._get_kwargs()
     expr_config_dict = {tup[0]:tup[1] for tup in all_args}
-    yaml_file = os.path.join(expr_dir, "Config.yaml")
+    yaml_file = os.path.join(expr_dir, "Logs/MLP_train_Config.yaml")
     with open(yaml_file, 'w') as yaml_out:
         yaml.dump(expr_config_dict, yaml_out)
 
     train_benign,train_adversarial,test_benign,test_adversarial = get_paths(expr_dir)
     train_benign = load_data(train_benign, 0)
     train_adversarial = load_data(train_adversarial, 1)
-    test_benign = load_data(test_benign, 0)
-    test_adversarial = load_data(test_adversarial, 1)
+    test_benign = load_data(test_benign, 0, flipped_indices=flipped_indices)
+    test_adversarial = load_data(test_adversarial, 1, flipped_indices=flipped_indices)
 
 
     if args.detector_type == 'Quantized':
@@ -273,27 +260,14 @@ def main_worker_train(gpu, ngpus_per_node, args):
         test_benign = quantize(test_benign)
         test_adversarial = quantize(test_adversarial)
 
-
     X_train, y_train = unison_shuffled_copies(train_benign[0], train_benign[1], train_adversarial[0], train_adversarial[1])
-
-
     x_y_train = [X_train, y_train]
     trainset = CustomImageDataset_Adv(x_y_train)
-    #train_loader = torch.utils.data.DataLoader(trainset, batch_size=args.batch_size,
-    #                                        shuffle=False, num_workers=args.workers)
-
-    test_benign[0] = test_benign[0][flipped_indices]
-    test_benign[1] = test_benign[1][flipped_indices]
-    test_adversarial[0] = test_adversarial[0][flipped_indices]
-    test_adversarial[1] = test_adversarial[1][flipped_indices]
 
     X_test, y_test = unison_shuffled_copies(test_benign[0], test_benign[1], test_adversarial[0], test_adversarial[1])
     x_y_test = [X_test, y_test]
 
     valset = CustomImageDataset_Adv(x_y_test)
-    #val_loader = torch.utils.data.DataLoader(valset, batch_size=args.batch_size,
-                                            #shuffle=False, num_workers=args.workers)
-
     ##########################################################################################
 
     if torch.cuda.is_available():
@@ -330,7 +304,6 @@ def main_worker_train(gpu, ngpus_per_node, args):
 
     val_loader = torch.utils.data.DataLoader(valset, batch_size=args.batch_size,
                                             shuffle=False, num_workers=args.workers)
-    
     for epoch in range(args.start_epoch, args.epochs):
         # train for one epoch
         train(train_loader, model, criterion, optimizer, epoch, device, args)
@@ -427,20 +400,20 @@ def main_worker_test(gpu, ngpus_per_node, args):
 
     # create model
     model = MLP()
+    model = model.eval()
     
     if args.test_type == 'benign':
         _,__,test_path,____ = get_paths(expr_dir)
-        test_data = load_data(test_path, 0)
+        test_data = load_data(test_path, 0, flipped_indices=flipped_indices)
 
     elif args.test_type == 'adversarial':
         _,__,___,test_path = get_paths(expr_dir)
-        test_data = load_data(test_path, 1)
+        test_data = load_data(test_path, 1, flipped_indices=flipped_indices)
 
 
     if args.detector_type == 'Quantized':
         print("Quantizing the ReLUs")
         test_data = quantize(test_data)
-
 
     X, y = unison_shuffled_copies_ind(test_data[0], test_data[1])
 
@@ -459,7 +432,6 @@ def main_worker_test(gpu, ngpus_per_node, args):
 
 
     if args.gpu is not None and torch.cuda.is_available():
-        print("Device is ", device)
         torch.cuda.set_device(device)
         model = model.cuda(device)
 
@@ -506,6 +478,37 @@ def main_worker_test(gpu, ngpus_per_node, args):
     predictions['pred_labels'] = all_preds
     predictions['pred_scores'] = all_preds_scores
 
+    # Process Image level classification decisions
+    sampled_dimension = 50
+
+    true_labels = predictions['true_labels']
+    pred_labels = predictions['pred_labels']
+    sampled_dimension = 50
+    benign_votes = [0 for i in range(len(true_labels) // sampled_dimension)]
+    adversarial_votes = [0 for i in range(len(true_labels) // sampled_dimension)]
+
+
+    pred_labels = np.asarray(pred_labels)
+    for idx, i in enumerate(range(0, len(true_labels), sampled_dimension)):
+        curr_pred = pred_labels[i:i+sampled_dimension]
+        adv_votes = np.count_nonzero(curr_pred == 1)
+        ben_votes = np.count_nonzero(curr_pred == 0)
+        adversarial_votes[idx] = adv_votes
+        benign_votes[idx] = ben_votes
+
+    outputs = np.stack((benign_votes, adversarial_votes))
+    outputs = torch.from_numpy(outputs)
+    preds = torch.argmax(outputs, dim=0)    
+    y_images = torch.tensor(y[0:len(preds)])
+    # Img acc
+    img_acc = sum(torch.eq(preds, y_images).to(dtype=int)) / len(preds)
+    predictions['true_labels_images'] = y_images
+    predictions['pred_labels_images'] = preds
+    predictions['acc_images'] = img_acc
+    print("Image level accuracy is : ", img_acc)
+    logger.critical(f"Image level accuracy is : {img_acc}" )
+
+
 
     # Save RBF preds
     preds_config = f"Predictions/RBF/{args.attack}_type-{args.test_type}_{args.total_attack_samples}_test_detector-type-{args.detector_type}_integrated-{args.integrated}_rbf_c-{args.c}_d-{args.d}.pickle"
@@ -514,15 +517,11 @@ def main_worker_test(gpu, ngpus_per_node, args):
         pickle.dump(predictions, o_file)
 
 
-
-
-
-
     logger.critical(f"Validating filtered dataset")
 
     #X_test, y_test = unison_shuffled_copies(test_benign[0], test_benign[1], test_adversarial[0], test_adversarial[1])
 
-    # Flipped indices #TODO
+    # Flipped indices
     test_data[0] = test_data[0][flipped_indices]
     test_data[1] = test_data[1][flipped_indices]
     x_y_test = [test_data[0], test_data[1]]
@@ -703,7 +702,6 @@ def validate(val_loader, model, criterion, args):
                 # compute output
                 output = model(images)
                 loss = criterion(output, target)
-
                 # measure accuracy and record loss
                 acc1, acc5 = utils.accuracy(output, target, topk=(1, 2))
                 losses.update(loss.item(), images.size(0))
