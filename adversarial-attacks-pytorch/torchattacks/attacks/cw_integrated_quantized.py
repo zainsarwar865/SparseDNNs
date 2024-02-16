@@ -146,7 +146,7 @@ class CW_MLP(Attack):
             else:
                 # If the attack is not targeted we simply make these two values unequal
                 condition = (pre != labels).float()
-                mlp_condition = mlp_pred_cw > 0
+                mlp_condition = mlp_labels == 0
                 condition = condition * mlp_condition
 
             # Filter out images that get either correct predictions or non-decreasing loss,

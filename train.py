@@ -141,7 +141,7 @@ if args.trainer_type == "MT_Baseline":
 expr_hash = (hashlib.md5(expr_config.encode('UTF-8')))
 expr_name = args.trainer_type + "_" + expr_hash.hexdigest()
 expr_dir = os.path.join(mt_root_directory, expr_name)
-
+print("Expr dir", expr_dir)
 
 if not os.path.exists(expr_dir):
     os.makedirs(expr_dir)
@@ -218,6 +218,8 @@ expr_config_dict = {tup[0]:tup[1] for tup in all_args}
 yaml_file = os.path.join(expr_dir, "Config.yaml")
 with open(yaml_file, 'w') as yaml_out:
     yaml.dump(expr_config_dict, yaml_out)
+
+exit()
 
 def main():
     if args.seed is not None:

@@ -121,7 +121,7 @@ def load_data(path, label, flipped_indices=None):
     if isinstance(flipped_indices, torch.Tensor):
         features_matrix = features_matrix[flipped_indices]
         # Merge batch and pixel dimensions
-    features_matrix  = features_matrix.flatten(0,1)
+    #features_matrix  = features_matrix.flatten(0,1)
     y = np.empty(features_matrix.shape[0])
     y.fill(label)
     return [features_matrix, y]
@@ -478,6 +478,9 @@ def main_worker_test(gpu, ngpus_per_node, args):
     predictions['pred_labels'] = all_preds
     predictions['pred_scores'] = all_preds_scores
 
+    
+    # Uncomment if doing hypercolumns
+    """
     # Process Image level classification decisions
     sampled_dimension = 50
 
@@ -507,7 +510,7 @@ def main_worker_test(gpu, ngpus_per_node, args):
     predictions['acc_images'] = img_acc
     print("Image level accuracy is : ", img_acc)
     logger.critical(f"Image level accuracy is : {img_acc}" )
-
+    """
 
 
     # Save RBF preds
@@ -516,7 +519,7 @@ def main_worker_test(gpu, ngpus_per_node, args):
     with open(preds_path, 'wb') as o_file:
         pickle.dump(predictions, o_file)
 
-
+    """
     logger.critical(f"Validating filtered dataset")
 
     #X_test, y_test = unison_shuffled_copies(test_benign[0], test_benign[1], test_adversarial[0], test_adversarial[1])
@@ -529,7 +532,7 @@ def main_worker_test(gpu, ngpus_per_node, args):
     val_loader = torch.utils.data.DataLoader(valset, batch_size=args.batch_size,
                                             shuffle=False, num_workers=args.workers)
     validate(val_loader, model, criterion, args)
-
+    """
 
 
 ###################################################
