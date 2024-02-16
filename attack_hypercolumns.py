@@ -235,7 +235,7 @@ all_flipped_indices = None
 
 # init mask
 
-num_dimensions = 200
+num_dimensions = 100
 mask = torch.zeros(args.batch_size, 1024, dtype=bool) # (batch_size, image_size)
 
 for i in range(args.batch_size):

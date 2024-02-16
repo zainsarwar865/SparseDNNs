@@ -92,18 +92,12 @@ class CW_MLP(Attack):
             print("Pos results are: ", red_indices.shape)
             print("Batch size is ", mlp_preds.shape)
 
-    
-            #rbf_loss = MSELoss_svm(rbf_preds, target_scores)
             mlp_loss = mlp_pred_cw.sum()
 
             if step > 10:
                 mlp_t_mask = mlp_pred_cw >= 0
                 mlp_mask = torch.logical_or(mlp_t_mask, mlp_mask)
 
-
-        
-            #print("Tot Succ samples: ", len(red_indices))
-            #print("Tot samples in batch : ", rbf_preds.shape)
             if self.targeted:
                 f_loss = self.f(outputs, target_labels).sum()
             else:
@@ -130,9 +124,9 @@ class CW_MLP(Attack):
             else:
                 # If the attack is not targeted we simply make these two values unequal
                 condition = (pre != labels).float()
-                mlp_condition = mlp_pred_cw > 0 
+                #print(mlp_labels)
+                mlp_condition = mlp_labels == 0
                 condition = condition * mlp_condition
-
             # Filter out images that get either correct predictions or non-decreasing loss,
             # i.e., only images that are both misclassified and loss-decreasing are left
             

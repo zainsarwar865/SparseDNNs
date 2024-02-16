@@ -196,10 +196,7 @@ if not os.path.exists(metrics_dir):
 
 # Create log files
 
-if args.integrated:
-    logging_path = os.path.join(expr_dir,f"resnet_integrated_{args.test_type}_{args.attack_split}_test.log")
-else:
-    logging_path = os.path.join(expr_dir,f"resnet_{args.test_type}_{args.attack_split}_test.log")
+logging_path = os.path.join(expr_dir,f"Logs/Resnet_integrated-{args.integrated}-Type-{args.test_type}_Split-{args.attack_split}_Detector-{args.detector_type}.log")
 
 logging.basicConfig(filename=logging_path,
                     format='%(asctime)s %(message)s',
@@ -215,7 +212,7 @@ logger.setLevel(logging.INFO)
 expr_config_dict = {}
 all_args = args._get_kwargs()
 expr_config_dict = {tup[0]:tup[1] for tup in all_args}
-yaml_file = os.path.join(expr_dir, f"Config_test_{args.test_type}.yaml")
+yaml_file = os.path.join(expr_dir, f"Logs/Resnet_Config_Integrated-{args.integrated}-Type-{args.test_type}_Split-{args.attack_split}_Detector-{args.detector_type}.yaml")
 with open(yaml_file, 'w') as yaml_out:
     yaml.dump(expr_config_dict, yaml_out)
 
