@@ -1,45 +1,5 @@
 import argparse
 import os
-import random
-import shutil
-import time
-import warnings
-from enum import Enum
-import yaml
-import pickle
-import numpy as np
-import pandas as pd
-from glob import glob
-import torch
-import torch.backends.cudnn as cudnn
-import torch.distributed as dist
-import torch.multiprocessing as mp
-import torch.nn as nn
-import torch.nn.parallel
-import torch.optim
-import torch.utils.data
-import torch.utils.data.distributed
-import torchvision.datasets as datasets
-import torchvision
-import torchvision.models as models
-from torchvision.models import resnet50, resnet18, ResNet50_Weights, ResNet18_Weights
-import torchvision.transforms as transforms
-from torch.optim.lr_scheduler import StepLR, CosineAnnealingLR, LinearLR, SequentialLR
-from torch.utils.data import Subset
-from utils.dataset import CustomImageDataset
-import hashlib
-from sklearn.metrics import f1_score
-import logging
-from collections import Counter
-from utils.transforms import get_mixup_cutmix
-from torch.utils.data.dataloader import default_collate
-import utils.utils as utils
-import utils.configs as configs
-from utils.wide_resnet import WideResNet
-
-model_names = sorted(name for name in models.__dict__
-    if name.islower() and not name.startswith("__")
-    and callable(models.__dict__[name]))
 
 parser = argparse.ArgumentParser(description='PyTorch Training')
 parser.add_argument('--root_hash_config', type=str)
@@ -83,8 +43,57 @@ parser.add_argument('--original_dataset', type=str)
 parser.add_argument('--original_config', type=str)
 parser.add_argument('--c', type=float)
 parser.add_argument('--d', type=float)
-
+parser.add_argument('--weight_repulsion', type=str)
+parser.add_argument('--scale_factor', type=int)
 args = parser.parse_args()
+
+os.environ['CUDA_VISIBLE_DEVICES']=str(args.gpu)
+args.gpu = 0
+
+
+
+
+import random
+import shutil
+import time
+import warnings
+from enum import Enum
+import yaml
+import pickle
+import numpy as np
+import pandas as pd
+from glob import glob
+import torch
+import torch.backends.cudnn as cudnn
+import torch.distributed as dist
+import torch.multiprocessing as mp
+import torch.nn as nn
+import torch.nn.parallel
+import torch.optim
+import torch.utils.data
+import torch.utils.data.distributed
+import torchvision.datasets as datasets
+import torchvision
+import torchvision.models as models
+#from torchvision.models import resnet50, resnet18, ResNet50_Weights, ResNet18_Weights
+import torchvision.transforms as transforms
+from torch.optim.lr_scheduler import StepLR, CosineAnnealingLR, LinearLR, SequentialLR
+from torch.utils.data import Subset
+from utils.dataset import CustomImageDataset
+import hashlib
+from sklearn.metrics import f1_score
+import logging
+from collections import Counter
+from utils.transforms import get_mixup_cutmix
+from torch.utils.data.dataloader import default_collate
+import utils.utils as utils
+import utils.configs as configs
+from utils.resnet_rand import resnet18
+
+model_names = sorted(name for name in models.__dict__
+    if name.islower() and not name.startswith("__")
+    and callable(models.__dict__[name]))
+
 
 # Handle bash boolean variables
 if args.pretrained == "True":
@@ -122,6 +131,20 @@ if args.model_ema == "True":
 else:
     args.model_ema = False
 
+
+if args.weight_repulsion == "True":
+    args.weight_repulsion = True
+else:
+    args.weight_repulsion = False
+
+
+if args.resume == "True":
+    args.resume = True
+else:
+    args.resume = False
+
+
+
 # assertions to avoid divide by 0 issue in learning rate
 assert args.epochs>args.lr_warmup_epochs, "Total epochs must be more than warmup epochs"
 
@@ -146,6 +169,14 @@ print("Expr dir", expr_dir)
 if not os.path.exists(expr_dir):
     os.makedirs(expr_dir)
 
+
+# Read MT's baseline checkpoint path
+mt_baseline_hash_config = expr_name
+mt_baseline_path = os.path.join(mt_root_directory, mt_baseline_hash_config)
+ckpt_config = "Checkpoints/model_best.pth.tar"
+mt_baseline_ckpt_path = os.path.join(mt_baseline_path, ckpt_config)
+
+
 # Make checkpoints and metrics directory
 ckpt_folder = "Checkpoints"
 ckpt_dir = os.path.join(expr_dir, ckpt_folder)
@@ -153,12 +184,14 @@ metrics_folder = "Metrics"
 metrics_dir = os.path.join(expr_dir, metrics_folder)
 relu_folder = "ReLUs"
 relu_dir = os.path.join(expr_dir, relu_folder)
-rbf_folder = "RBF"
+rbf_folder = "MLP"
 rbf_dir = os.path.join(expr_dir, rbf_folder)
 adv_datasets_folder = "Adversarial_Datasets"
 adv_datasets_dir = os.path.join(expr_dir, adv_datasets_folder)
 benign_datasets_folder = "Benign_Datasets"
 benign_datasets_dir = os.path.join(expr_dir, benign_datasets_folder)
+logs_folder = "Logs"
+logs_datasets_dir = os.path.join(expr_dir, logs_folder)
 preds_folder = "Predictions"
 preds_dir = os.path.join(expr_dir, preds_folder)
 # Sub folders for preds_dir
@@ -191,6 +224,9 @@ if not os.path.exists(rbf_preds_dir):
     os.makedirs(rbf_preds_dir)
 if not os.path.exists(perturbed_indices_dir):
     os.makedirs(perturbed_indices_dir)
+if not os.path.exists(logs_datasets_dir):
+    os.makedirs(logs_datasets_dir)
+
 
 # Create log files
 if(args.evaluate):
@@ -215,11 +251,16 @@ logger.setLevel(logging.INFO)
 expr_config_dict = {}
 all_args = args._get_kwargs()
 expr_config_dict = {tup[0]:tup[1] for tup in all_args}
-yaml_file = os.path.join(expr_dir, "Config.yaml")
+yaml_file = os.path.join(expr_dir, "Logs/Config.yaml")
 with open(yaml_file, 'w') as yaml_out:
     yaml.dump(expr_config_dict, yaml_out)
 
-exit()
+
+
+
+
+
+
 
 def main():
     if args.seed is not None:
@@ -255,25 +296,17 @@ def main_worker(gpu, ngpus_per_node, args):
 
     # create model
     if args.pretrained:
-        logger.critical(f"=> using pre-trained model {args.arch}")
-        if args.arch == 'wideresnet':
-            model = WideResNet()
-        
-        elif args.arch == 'resnet18':
-            model = models.__dict__[args.arch](weights=ResNet18_Weights.IMAGENET1K_V2)
-        elif args.arch == 'resnet50':
-            model = models.__dict__[args.arch](weights=ResNet50_Weights.IMAGENET1K_V2)
+        logger.critical(f"=> using pre-trained model {args.arch}")        
+        if args.arch == 'resnet18':
+            model = resnet18(scale_factor=args.scale_factor)
         if args.new_classifier:
-            if args.arch == 'resnet50':
-               model.fc = nn.Linear(in_features=2048, out_features=args.num_classes, bias=True)
             if args.arch == 'resnet18':
                model.fc = nn.Linear(in_features=512, out_features=args.num_classes, bias=True)
     else:
         logger.critical(f"=> creating model {args.arch}")
-        model = models.__dict__[args.arch]()
+        if args.arch == 'resnet18':
+            model = resnet18(scale_factor=args.scale_factor)
         if args.new_classifier:
-            if args.arch == 'resnet50':
-                model.fc = nn.Linear(in_features=2048, out_features=args.num_classes, bias=True)
             if args.arch == 'resnet18':
                 model.fc = nn.Linear(in_features=512, out_features=args.num_classes, bias=True)
     
@@ -353,14 +386,14 @@ def main_worker(gpu, ngpus_per_node, args):
     """
     # optionally resume from a checkpoint
     if args.resume:
-        if os.path.isfile(args.resume):
-            print("=> loading checkpoint '{}'".format(args.resume))
+        if os.path.isfile(mt_baseline_ckpt_path):
+            print("=> loading checkpoint '{}'".format(mt_baseline_ckpt_path))
             if args.gpu is None:
-                checkpoint = torch.load(args.resume)
+                checkpoint = torch.load(mt_baseline_ckpt_path)
             elif torch.cuda.is_available():
                 # Map model to be loaded to specified single gpu.
                 loc = 'cuda:{}'.format(args.gpu)
-                checkpoint = torch.load(args.resume, map_location=loc)
+                checkpoint = torch.load(mt_baseline_ckpt_path, map_location=loc)
             args.start_epoch = checkpoint['epoch']
             best_acc1 = checkpoint['best_acc1']
             if args.gpu is not None:
@@ -370,9 +403,9 @@ def main_worker(gpu, ngpus_per_node, args):
             model.load_state_dict(checkpoint['state_dict'])
             optimizer.load_state_dict(checkpoint['optimizer'])
             scheduler.load_state_dict(checkpoint['scheduler'])
-            logger.critical(f"=> loaded checkpoint '{args.resume}' (epoch {args.start_epoch})")
+            logger.critical(f"=> loaded checkpoint '{mt_baseline_ckpt_path}' (epoch {args.start_epoch})")
         else:
-            logger.critical(f"=> no checkpoint found at '{args.resume}'")
+            logger.critical(f"=> no checkpoint found at '{mt_baseline_ckpt_path}'")
 
     random_seed=args.seed
     # GO-GO-GO!
