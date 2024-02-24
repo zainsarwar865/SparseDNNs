@@ -35,8 +35,24 @@ __all__ = [
     "wide_resnet101_2",
 ]
 
-div_factor = 2
 
+# Random Kernel groups
+# EDIT THISSS
+class SparsifyKernelGroups(nn.Module):
+    def __init__(self, div_factor):
+        super().__init__()
+        self.div_factor = div_factor
+        
+    def forward(self, conv_filters):
+        group_indices = torch.randint(size=(conv_filters.shape[0], conv_filters.shape[1] // self.div_factor, conv_filters.shape[2],
+                                             conv_filters.shape[3]), high = self.div_factor, low=0)
+        offset_indices = torch.arange(start=0, end =conv_filters.shape[1], step=self.div_factor )
+        offset_indices = offset_indices.reshape(-1, 1 ,1)
+        indices = torch.add(group_indices, offset_indices)
+        conv_filters = torch.gather(conv_filters, 1, indices)
+        return conv_filters
+
+# Random kernels
 
 class SparsifyFiltersLayer(nn.Module):
     def __init__(self, div_factor):
@@ -52,7 +68,7 @@ class SparsifyFiltersLayer(nn.Module):
         indices = torch.swapaxes(indices, 1, -1).to(device=conv_filters.device)
         filtered_filters = torch.gather(conv_filters, 1, indices)
         return filtered_filters
-    
+
 
 def conv3x3(in_planes: int, out_planes: int, stride: int = 1, groups: int = 1, dilation: int = 1) -> nn.Conv2d:
     """3x3 convolution with padding"""

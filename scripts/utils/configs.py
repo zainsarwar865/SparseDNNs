@@ -1,12 +1,6 @@
 dataset_root_paths = {
-    "Imagenet":  "/bigstor/zsarwar/Imagenet/DF/",
-    "Tsinghua": "/bigstor/zsarwar/Tsinghua/DF/",
-    "OpenImages": "/bigstor/zsarwar/OpenImages/DF/",
-    "food101": "/bigstor/common_data/food_101/DF", 
-    "uecfood256": "/bigstor/common_data/UECFOOD256/DF/",
-    "cifar10": "/bigstor/zsarwar/CIFAR10",
-    "cifar100": "/bigstor/zsarwar/cifar-100-python/"
-}
+    "cifar10": "/net/scratch/zsarwar/Datasets/CIFAR10",
+ }
 
 dataset_configs = {
     "Imagenet": {'train': {"dogs": "df_imagenet_dogs_train.pkl", 

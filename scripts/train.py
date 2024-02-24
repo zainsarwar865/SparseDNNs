@@ -7,7 +7,7 @@ parser.add_argument('--base_dir')
 parser.add_argument('--mt_hash_config', type=str)
 parser.add_argument('--arch', metavar='ARCH',)
 parser.add_argument('--num_eval_epochs', type=int)
-parser.add_argument('--workers', default=4, type=int)
+parser.add_argument('--workers', default=2, type=int)
 parser.add_argument('--epochs', type=int)
 parser.add_argument('--start_epoch', type=int, default=0)
 parser.add_argument('--batch_size', type=int)
@@ -51,8 +51,6 @@ os.environ['CUDA_VISIBLE_DEVICES']=str(args.gpu)
 args.gpu = 0
 
 
-
-
 import random
 import shutil
 import time
@@ -89,6 +87,14 @@ from torch.utils.data.dataloader import default_collate
 import utils.utils as utils
 import utils.configs as configs
 from utils.resnet_rand import resnet18
+import threading
+
+
+def kill_script():    
+    exit()
+
+timer = threading.Timer(13500, kill_script)
+
 
 model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
@@ -173,7 +179,7 @@ if not os.path.exists(expr_dir):
 # Read MT's baseline checkpoint path
 mt_baseline_hash_config = expr_name
 mt_baseline_path = os.path.join(mt_root_directory, mt_baseline_hash_config)
-ckpt_config = "Checkpoints/model_best.pth.tar"
+ckpt_config = "Checkpoints/checkpoint.pth.tar"
 mt_baseline_ckpt_path = os.path.join(mt_baseline_path, ckpt_config)
 
 
@@ -491,13 +497,11 @@ def main_worker(gpu, ngpus_per_node, args):
     elif args.original_dataset == 'cifar100':
 
         trainset = torchvision.datasets.CIFAR100(root=dataset_path, train=True,
-                                                download=True, transform=transform_train)
+                                                download=False, transform=transform_train)
 
         valset = torchvision.datasets.CIFAR100(root=dataset_path, train=False,
-                                            download=True, transform=transform_test
+                                            download=False, transform=transform_test
                                             )
-
-
 
     train_loader = torch.utils.data.DataLoader(trainset, batch_size=args.batch_size,
                                             shuffle=True, num_workers=args.workers, collate_fn=collate_fn)
@@ -506,7 +510,6 @@ def main_worker(gpu, ngpus_per_node, args):
                                             shuffle=False, num_workers=args.workers)
     
     for epoch in range(args.start_epoch, args.epochs):
-
         # train for one epoch
         train(train_loader, model, criterion, optimizer, epoch, device, args)
         if(((epoch + 1) % args.num_eval_epochs) == 0):
@@ -516,6 +519,14 @@ def main_worker(gpu, ngpus_per_node, args):
             # remember best acc@1 and save checkpoint
             is_best = acc1 > best_acc1
             best_acc1 = max(acc1, best_acc1)
+            save_checkpoint(args, {
+                'epoch': epoch + 1,
+                'arch': args.arch,
+                'state_dict': model.state_dict(),
+                'best_acc1': best_acc1,
+                'optimizer' : optimizer.state_dict(),
+                'scheduler' : scheduler.state_dict()}, epoch, is_best)
+            """
             if is_best:
                 save_checkpoint(args, {
                     'epoch': epoch + 1,
@@ -524,7 +535,8 @@ def main_worker(gpu, ngpus_per_node, args):
                     'best_acc1': best_acc1,
                     'optimizer' : optimizer.state_dict(),
                     'scheduler' : scheduler.state_dict()}, epoch, is_best)
-
+            # Also save latest checkpoint
+            """
 
     # Test after training
     # Loading the best checkpoint
@@ -675,18 +687,16 @@ def validate(val_loader, model, criterion, args):
     return top1.avg
 
 def save_checkpoint(args, state, epoch, is_best, filename='checkpoint.pth.tar'):
-    #ckpt_name = f"{epoch+1}_{filename}"
-    #filename = os.path.join(ckpt_dir, ckpt_name)
-    ckpt_name = "model_best.pth.tar"
+    ckpt_name = f"{filename}"
     ckpt_name = os.path.join(ckpt_dir, ckpt_name)
     torch.save(state, ckpt_name)
-    """
+    
     if is_best:
         logger.critical("Saving best model")
         best_ckpt_name = "model_best.pth.tar"
         best_ckpt_path = os.path.join(ckpt_dir, best_ckpt_name)
-        shutil.copyfile(filename, best_ckpt_path)
-    """
+        shutil.copyfile(ckpt_name, best_ckpt_path)
+
 class Summary(Enum):
     NONE = 0
     AVERAGE = 1
