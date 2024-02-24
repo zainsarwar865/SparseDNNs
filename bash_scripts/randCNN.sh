@@ -21,7 +21,7 @@ gpu=0
 seed=42
 attack="CW"
 detector_type="Regular" # Regular
-scale_factor=4
+scale_factor=2
 weight_repulsion="False"
 
 c_base=0.1
@@ -32,7 +32,7 @@ d_base=0
 #############################################################################################
 
 # MT Root parameters
-base_dir='/bigstor/zsarwar/SparseDNNs'
+base_dir='/net/scratch/zsarwar/SparseDNNs'
 mt_dataset="cifar10"
 mt_config="randCNN"
 mt_classes=10
@@ -73,13 +73,14 @@ mixup_alpha=0.2
 cutmix_alpha=0.2
 random_erasing=0.1
 model_ema=False
-epochs=1000
+epochs=2500
 num_eval_epochs=1
 resume=True
 pretrained=False
 freeze_layers=False
 scale_factor=$scale_factor
 weight_repulsion=$weight_repulsion
+sparseblock='SparsifyFiltersLayer'
 seed=42
 eval_pretrained=False
 num_classes=10
@@ -90,7 +91,7 @@ original_dataset=$mt_dataset
 original_config=$mt_config
 model='resnet18'
 trainer_type="MT_Baseline"
-mt_hash_config="${trainer_type}_${original_dataset}_${original_config}_${model}_pretrained-${pretrained}_freeze-layers-${freeze_layers}_lr-${lr}_batch_size-${batch_size}_lr-warmup-epochs-${lr_warmup_epochs}_lr-warmup-decay-${lr_warmup_decay}_label-smoothing-${label_smoothing}_mixup-alpha-${mixum_alpha}_cutmix_alpha-${cutmix_alpha}_random-erasing-${random_erasing}_model-ema-${model_ema}_weight_decay-${weight_decay}_epochs-${epochs}_eval-pretrained-${eval_pretrained}_weight-repulsion-${weight_repulsion}_scale-factor_${scale_factor}_seed-${seed}"
+mt_hash_config="${trainer_type}_${original_dataset}_${original_config}_${model}_pretrained-${pretrained}_freeze-layers-${freeze_layers}_lr-${lr}_batch_size-${batch_size}_lr-warmup-epochs-${lr_warmup_epochs}_lr-warmup-decay-${lr_warmup_decay}_label-smoothing-${label_smoothing}_mixup-alpha-${mixum_alpha}_cutmix_alpha-${cutmix_alpha}_random-erasing-${random_erasing}_model-ema-${model_ema}_weight_decay-${weight_decay}_epochs-${epochs}_eval-pretrained-${eval_pretrained}_weight-repulsion-${weight_repulsion}_scale-factor_${scale_factor}_sparseblock-${sparseblock}_seed-${seed}"
 
 if [ "$TRAIN_MT_BASELINE" = true ]
 then
@@ -126,7 +127,8 @@ then
     --c=$c_base \
     --d=$d_base \
     --weight_repulsion=$weight_repulsion \
-    --scale_factor=$scale_factor
+    --scale_factor=$scale_factor \
+    --sparsefilter=$sparseblock
 
 fi
 

@@ -44,7 +44,8 @@ parser.add_argument('--original_config', type=str)
 parser.add_argument('--c', type=float)
 parser.add_argument('--d', type=float)
 parser.add_argument('--weight_repulsion', type=str)
-parser.add_argument('--scale_factor', type=int)
+parser.add_argument('--scale_factor', type=int),
+parser.add_argument('--sparsefilter', type=str),
 args = parser.parse_args()
 
 os.environ['CUDA_VISIBLE_DEVICES']=str(args.gpu)
@@ -88,12 +89,14 @@ import utils.utils as utils
 import utils.configs as configs
 from utils.resnet_rand import resnet18
 import threading
+from typing import Type, Union, Any
+from utils.resnet_rand import SparsifyFiltersLayer, SparsifyKernelGroups
 
 
 def kill_script():    
     exit()
 
-timer = threading.Timer(13500, kill_script)
+timer = threading.Timer(14000, kill_script)
 
 
 model_names = sorted(name for name in models.__dict__
@@ -262,11 +265,13 @@ with open(yaml_file, 'w') as yaml_out:
     yaml.dump(expr_config_dict, yaml_out)
 
 
+# Select sparseblock here
+sparseblock : Type[Union[SparsifyFiltersLayer, SparsifyKernelGroups]]
 
-
-
-
-
+if args.sparsefilter == 'SparsifyFiltersLayer':
+    sparseblock = SparsifyFiltersLayer
+elif args.sparsefilter == 'SparsifyKernelGroups':
+    sparseblock = SparsifyKernelGroups
 
 def main():
     if args.seed is not None:
@@ -304,14 +309,14 @@ def main_worker(gpu, ngpus_per_node, args):
     if args.pretrained:
         logger.critical(f"=> using pre-trained model {args.arch}")        
         if args.arch == 'resnet18':
-            model = resnet18(scale_factor=args.scale_factor)
+            model = resnet18(sparsefilter=sparseblock,scale_factor=args.scale_factor)
         if args.new_classifier:
             if args.arch == 'resnet18':
                model.fc = nn.Linear(in_features=512, out_features=args.num_classes, bias=True)
     else:
         logger.critical(f"=> creating model {args.arch}")
         if args.arch == 'resnet18':
-            model = resnet18(scale_factor=args.scale_factor)
+            model = resnet18(sparsefilter=sparseblock, scale_factor=args.scale_factor)
         if args.new_classifier:
             if args.arch == 'resnet18':
                 model.fc = nn.Linear(in_features=512, out_features=args.num_classes, bias=True)

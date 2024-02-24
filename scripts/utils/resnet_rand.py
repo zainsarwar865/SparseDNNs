@@ -37,7 +37,6 @@ __all__ = [
 
 
 # Random Kernel groups
-# EDIT THISSS
 class SparsifyKernelGroups(nn.Module):
     def __init__(self, div_factor):
         super().__init__()
@@ -53,7 +52,6 @@ class SparsifyKernelGroups(nn.Module):
         return conv_filters
 
 # Random kernels
-
 class SparsifyFiltersLayer(nn.Module):
     def __init__(self, div_factor):
         super().__init__()
@@ -102,7 +100,8 @@ class BasicBlock(nn.Module):
         base_width: int = 64,
         dilation: int = 1,
         norm_layer: Optional[Callable[..., nn.Module]] = None,
-        scale_factor: int = 2
+        scale_factor: int = 2,
+        sparsefilter : Type[Union[SparsifyFiltersLayer, SparsifyKernelGroups]] = SparsifyKernelGroups,   
     ) -> None:
         super().__init__()
         if norm_layer is None:
@@ -120,8 +119,7 @@ class BasicBlock(nn.Module):
         self.bn2 = norm_layer(planes)
         self.downsample = downsample
         self.stride = stride
-
-        self.SparseFilters = SparsifyFiltersLayer(self.scale_factor)
+        self.SparseFilters = sparsefilter(self.scale_factor)
 
     def forward(self, x: Tensor) -> Tensor:
         identity = x
@@ -215,7 +213,8 @@ class ResNet(nn.Module):
         width_per_group: int = 64,
         replace_stride_with_dilation: Optional[List[bool]] = None,
         norm_layer: Optional[Callable[..., nn.Module]] = None,
-        scale_factor: int = 2
+        scale_factor: int = 2,
+        sparsefilter : Type[Union[SparsifyFiltersLayer, SparsifyKernelGroups]] = SparsifyKernelGroups,
 
     ) -> None:
         super().__init__()
@@ -243,10 +242,10 @@ class ResNet(nn.Module):
         self.bn1 = norm_layer(self.inplanes)
         self.relu = nn.ReLU(inplace=True)
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-        self.layer1 = self._make_layer(block, 64, layers[0])
-        self.layer2 = self._make_layer(block, 128, layers[1], stride=2, dilate=replace_stride_with_dilation[0])
-        self.layer3 = self._make_layer(block, 256, layers[2], stride=2, dilate=replace_stride_with_dilation[1])
-        self.layer4 = self._make_layer(block, 512, layers[3], stride=2, dilate=replace_stride_with_dilation[2])
+        self.layer1 = self._make_layer(block, 64, layers[0], sparsefilter=sparsefilter)
+        self.layer2 = self._make_layer(block, 128, layers[1], stride=2, dilate=replace_stride_with_dilation[0], sparsefilter=sparsefilter)
+        self.layer3 = self._make_layer(block, 256, layers[2], stride=2, dilate=replace_stride_with_dilation[1],sparsefilter=sparsefilter)
+        self.layer4 = self._make_layer(block, 512, layers[3], stride=2, dilate=replace_stride_with_dilation[2],sparsefilter=sparsefilter)
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.fc = nn.Linear(512 * block.expansion, num_classes)
 
@@ -275,7 +274,8 @@ class ResNet(nn.Module):
         blocks: int,
         stride: int = 1,
         dilate: bool = False,
-    ) -> nn.Sequential:
+        sparsefilter : Type[Union[SparsifyFiltersLayer, SparsifyKernelGroups]] = SparsifyKernelGroups,
+        ) -> nn.Sequential:
         norm_layer = self._norm_layer
         downsample = None
         previous_dilation = self.dilation
@@ -291,7 +291,8 @@ class ResNet(nn.Module):
         layers = []
         layers.append(
             block(
-                self.inplanes, planes,stride, downsample, self.groups, self.base_width, previous_dilation, norm_layer, self.scale_factor
+                self.inplanes, planes,stride, downsample, self.groups, self.base_width, previous_dilation, norm_layer, self.scale_factor, 
+                sparsefilter=sparsefilter,
             )
         )
         self.inplanes = planes * block.expansion
@@ -304,7 +305,8 @@ class ResNet(nn.Module):
                     base_width=self.base_width,
                     dilation=self.dilation,
                     norm_layer=norm_layer,
-                    scale_factor=self.scale_factor
+                    scale_factor=self.scale_factor,
+                    sparsefilter=sparsefilter,
                 )
             )
 
