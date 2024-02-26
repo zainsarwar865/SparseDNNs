@@ -1,13 +1,15 @@
 import os
 import sys
 import argparse
+import signal
+import sys
 
 parser = argparse.ArgumentParser(description='PyTorch Training')
 parser.add_argument('--root_hash_config', type=str)
 parser.add_argument('--base_dir')
 parser.add_argument('--mt_hash_config', type=str)
 parser.add_argument('--num_eval_epochs', type=int)
-parser.add_argument('--workers', default=4, type=int)
+parser.add_argument('--workers', default=2, type=int)
 parser.add_argument('--start_epoch', type=int, default=0)
 parser.add_argument('--batch_size', type=int)
 parser.add_argument('--model', type=str)
@@ -29,9 +31,28 @@ parser.add_argument('--total_attack_samples', type=int)
 parser.add_argument('--total_train_samples', type=int)
 parser.add_argument('--integrated', type=str)
 parser.add_argument('--print_freq', default=10, type=int)
+parser.add_argument('--scale_factor', type=int),
+parser.add_argument('--sparsefilter', type=str),
 parser.add_argument('--seed', type=int, help="seed for pandas sampling")
 
 args = parser.parse_args()
+
+
+def timeout_handler(signum, frame):
+    print("Script completed after x seconds.")
+    sys.exit(0)
+
+
+x_seconds = 14000
+
+
+# Set the signal handler
+signal.signal(signal.SIGALRM, timeout_handler)
+
+# Set the alarm to trigger after x_seconds
+signal.alarm(x_seconds)
+
+
 
 def run_validate(model, loader, base_progress=0):
     all_masks = None
@@ -64,6 +85,12 @@ else:
     args.integrated = False
 
 
+
+
+
+
+
+
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 args.gpu = 0
 
@@ -72,7 +99,7 @@ import torch.nn as nn
 import torchvision
 import torchvision.transforms as transforms
 #from torchvision.models import resnet18
-from utils.resnet import resnet18
+from utils.resnet_rand import resnet18, SparsifyFiltersLayer, SparsifyKernelGroups
 from utils import configs
 import hashlib
 import logging
@@ -92,6 +119,8 @@ import random
 import torch.backends.cudnn as cudnn
 from utils.wide_resnet import WideResNet
 import yaml
+from typing import Any, Union, Type
+from utils.MLP import MLP
 
 if args.integrated:
     if args.detector_type == 'Quantized':
@@ -109,6 +138,17 @@ cudnn.benchmark = False
 np.random.seed(args.seed)
 
 print("Starting attack...")
+
+
+
+# Select sparseblock here
+sparseblock : Type[Union[SparsifyFiltersLayer, SparsifyKernelGroups]]
+
+if args.sparsefilter == 'SparsifyFiltersLayer':
+    sparseblock = SparsifyFiltersLayer
+elif args.sparsefilter == 'SparsifyKernelGroups':
+    sparseblock = SparsifyKernelGroups
+
 
 # GO-GO-GO!
 normalize  =  transforms.Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261))
@@ -174,7 +214,7 @@ if args.model == 'wideresnet':
     model = WideResNet()
 
 elif args.model == 'resnet18':
-    model = resnet18()
+    model = resnet18(sparsefilter=sparseblock,scale_factor=args.scale_factor)
     model.fc = nn.Linear(in_features=512, out_features=args.num_classes, bias=True)
 
 checkpoint = torch.load(ckpt_path, map_location=loc)
@@ -223,22 +263,8 @@ if args.integrated:
 """
 # Load trained MLP
 
-if args.integrated:
-    class MLP(nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.l1 = nn.Linear(512, 1024)
-            self.l2 = nn.Linear(1024,2)
-            self.ReLU = nn.ReLU()
-        
-        def forward(self, x):
-            x = self.l1(x)
-            x = self.ReLU(x)
-            x = self.l2(x)
-            return x
-            
+if args.integrated:        
     mlp = MLP()
-
     best_ckpt_name = "model_best.pth.tar"
     best_ckpt_path = os.path.join(mlp_ckpt_dir, best_ckpt_name)
     if args.gpu is None:
@@ -251,12 +277,8 @@ if args.integrated:
     best_epoch = checkpoint['epoch']
     best_acc1 = checkpoint['best_acc1']
     best_acc1 = torch.tensor(best_acc1)
-
     mlp.load_state_dict(checkpoint['state_dict'])
-
     mlp = mlp.to(device=device)
-
-
 
 all_adv_images = None
 all_og_images = None

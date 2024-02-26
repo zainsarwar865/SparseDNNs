@@ -88,16 +88,24 @@ from torch.utils.data.dataloader import default_collate
 import utils.utils as utils
 import utils.configs as configs
 from utils.resnet_rand import resnet18
-import threading
 from typing import Type, Union, Any
 from utils.resnet_rand import SparsifyFiltersLayer, SparsifyKernelGroups
+import signal
+import sys
+
+def timeout_handler(signum, frame):
+    print("Script completed after x seconds.")
+    sys.exit(0)
 
 
-def kill_script():    
-    exit()
+x_seconds = 14000
 
-timer = threading.Timer(14000, kill_script)
 
+# Set the signal handler
+signal.signal(signal.SIGALRM, timeout_handler)
+
+# Set the alarm to trigger after x_seconds
+signal.alarm(x_seconds)
 
 model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
@@ -599,7 +607,7 @@ def train(train_loader, model, criterion, optimizer, epoch, device, args):
         target = target.to(device, non_blocking=True)
 
         # compute output
-        output = model(images)
+        output, _ = model(images)
         loss = criterion(output, target)
 
         # measure accuracy and record loss
@@ -647,7 +655,7 @@ def validate(val_loader, model, criterion, args):
                     target = target.cuda(args.gpu, non_blocking=True)
 
                 # compute output
-                output = model(images)
+                output, _ = model(images)
                 loss = criterion(output, target)
 
                 # measure accuracy and record loss

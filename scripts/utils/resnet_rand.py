@@ -47,7 +47,7 @@ class SparsifyKernelGroups(nn.Module):
                                              conv_filters.shape[3]), high = self.div_factor, low=0)
         offset_indices = torch.arange(start=0, end =conv_filters.shape[1], step=self.div_factor )
         offset_indices = offset_indices.reshape(-1, 1 ,1)
-        indices = torch.add(group_indices, offset_indices)
+        indices = torch.add(group_indices, offset_indices).to(device=conv_filters.device)
         conv_filters = torch.gather(conv_filters, 1, indices)
         return conv_filters
 
@@ -325,10 +325,10 @@ class ResNet(nn.Module):
         x = self.layer4(x)
 
         x = self.avgpool(x)
-        x = torch.flatten(x, 1)
-        x = self.fc(x)
+        y = torch.flatten(x, 1)
+        x = self.fc(y)
 
-        return x
+        return x, y
 
     def forward(self, x: Tensor) -> Tensor:
         return self._forward_impl(x)
