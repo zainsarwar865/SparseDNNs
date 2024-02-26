@@ -7,7 +7,7 @@ parser.add_argument('--base_dir')
 parser.add_argument('--mt_hash_config', type=str)
 parser.add_argument('--arch', metavar='ARCH',)
 parser.add_argument('--num_eval_epochs', type=int)
-parser.add_argument('--workers', default=4, type=int)
+parser.add_argument('--workers', default=2, type=int)
 parser.add_argument('--epochs', type=int)
 parser.add_argument('--start_epoch', type=int, default=0)
 parser.add_argument('--batch_size', type=int)
@@ -49,6 +49,11 @@ parser.add_argument('--attack', type=str)
 parser.add_argument('--integrated', type=str)
 parser.add_argument('--c', type=float)
 parser.add_argument('--d', type=float)
+parser.add_argument('--weight_repulsion', type=str)
+parser.add_argument('--scale_factor', type=int),
+parser.add_argument('--sparsefilter', type=str)
+
+
 args = parser.parse_args()
 os.environ['CUDA_VISIBLE_DEVICES'] = str(args.gpu)
 args.gpu=0
@@ -77,8 +82,8 @@ import torch.utils.data.distributed
 import torchvision.datasets as datasets
 import torchvision
 import torchvision.models as models
-from torchvision.models import resnet50, ResNet50_Weights, ResNet18_Weights
-from utils.resnet import resnet18
+#from torchvision.models import resnet50, ResNet50_Weights, ResNet18_Weights
+#from utils.resnet import resnet18
 import torchvision.transforms as transforms
 from torch.optim.lr_scheduler import StepLR, CosineAnnealingLR, LinearLR, SequentialLR
 from torch.utils.data import Subset
@@ -94,6 +99,8 @@ import utils.configs as configs
 from torchvision.models.feature_extraction import create_feature_extractor
 from collections import defaultdict
 from utils.wide_resnet import WideResNet
+from utils.resnet_rand import resnet18, SparsifyFiltersLayer, SparsifyKernelGroups
+from typing import Type, Union, Any
 
 model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
@@ -167,6 +174,13 @@ if args.model_ema == "True":
 else:
     args.model_ema = False
 
+
+if args.weight_repulsion == "True":
+    args.weight_repulsion = True
+else:
+    args.weight_repulsion = False
+
+
 # assertions to avoid divide by 0 issue in learning rate
 assert args.epochs>args.lr_warmup_epochs, "Total epochs must be more than warmup epochs"
 
@@ -233,6 +247,18 @@ yaml_file = os.path.join(expr_dir, "Config.yaml")
 with open(yaml_file, 'w') as yaml_out:
     yaml.dump(expr_config_dict, yaml_out)
 
+
+
+# Select sparseblock here
+sparseblock : Type[Union[SparsifyFiltersLayer, SparsifyKernelGroups]]
+
+if args.sparsefilter == 'SparsifyFiltersLayer':
+    sparseblock = SparsifyFiltersLayer
+elif args.sparsefilter == 'SparsifyKernelGroups':
+    sparseblock = SparsifyKernelGroups
+
+
+
 def main():
     if args.seed is not None:
         random.seed(args.seed)
@@ -279,9 +305,9 @@ def main_worker(gpu, ngpus_per_node, args):
             model.load_state_dict(state_dict)
             ###################################################################
         elif args.arch == 'resnet18':
-            model = models.__dict__[args.arch](weights=ResNet18_Weights.IMAGENET1K_V2)
-        elif args.arch == 'resnet50':
-            model = models.__dict__[args.arch](weights=ResNet50_Weights.IMAGENET1K_V2)
+            model = resnet18(sparsefilter=sparseblock,scale_factor=args.scale_factor)
+        #elif args.arch == 'resnet50':
+            #model = models.__dict__[args.arch](weights=ResNet50_Weights.IMAGENET1K_V2)
         if args.new_classifier:
             if args.arch == 'resnet50':
                model.fc = nn.Linear(in_features=2048, out_features=args.num_classes, bias=True)
@@ -325,7 +351,7 @@ def main_worker(gpu, ngpus_per_node, args):
             #model.load_state_dict(state_dict)
             ###################################################################
         elif args.arch == 'resnet18':
-            model = resnet18()
+            model = resnet18(sparsefilter=sparseblock,scale_factor=args.scale_factor)
         else:
             model = models.__dict__[args.arch]()
         if args.new_classifier:
