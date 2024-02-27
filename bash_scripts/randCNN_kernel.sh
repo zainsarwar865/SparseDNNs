@@ -1,10 +1,10 @@
 CREATE_ROOT=false
-TRAIN_MT_BASELINE=false
+TRAIN_MT_BASELINE=true
 RUN_ATTACK=false
 TEST=false
 FEATURE_EXTRACTION_BENIGN=false
 FEATURE_EXTRACTION_ADVERSARIAL=false
-TRAIN_MLP=true
+TRAIN_MLP=false
 TEST_MT_INTEGRATED_PREATTACK=false
 RUN_ATTACK_INTEGRATED=false
 TEST_INTEGRATED_ADVERSARIAL=false
@@ -22,7 +22,7 @@ seed=42
 attack="CW"
 detector_type="Regular" # Regular
 scale_factor=2
-weight_repulsion="False"
+weight_repulsion="True"
 
 c_base=0.1
 d_base=0
@@ -844,7 +844,7 @@ train=False
 
 original_dataset=cifar10
 c_attack=0.3
-d_attack=0.0
+d_attack=0.3
 
 # Quantized
 if [ "$detector_type" = 'Quantized' ]
@@ -856,7 +856,7 @@ fi
 
 steps=100
 lr=0.01
-batch_size=256
+batch_size=512
 total_attack_samples_test=5120
 
 

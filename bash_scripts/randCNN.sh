@@ -1,13 +1,13 @@
 CREATE_ROOT=false
-TRAIN_MT_BASELINE=true
-RUN_ATTACK=false
-TEST=false
-FEATURE_EXTRACTION_BENIGN=false
-FEATURE_EXTRACTION_ADVERSARIAL=false
-TRAIN_MLP=false
-TEST_MT_INTEGRATED_PREATTACK=false
-RUN_ATTACK_INTEGRATED=false
-TEST_INTEGRATED_ADVERSARIAL=false
+TRAIN_MT_BASELINE=false
+RUN_ATTACK=true
+TEST=true
+FEATURE_EXTRACTION_BENIGN=true
+FEATURE_EXTRACTION_ADVERSARIAL=true
+TRAIN_MLP=true
+TEST_MT_INTEGRATED_PREATTACK=true
+RUN_ATTACK_INTEGRATED=true
+TEST_INTEGRATED_ADVERSARIAL=true
 
 #echo $y
 BashName=${0##*/}
@@ -20,7 +20,7 @@ home_dir=/home/zsarwar/Projects/SparseDNNs/scripts
 gpu=0
 seed=42
 attack="CW"
-detector_type="Regular" # Regular
+detector_type="Quantized" # Regular
 scale_factor=2
 weight_repulsion="False"
 
@@ -80,7 +80,7 @@ pretrained=False
 freeze_layers=False
 scale_factor=$scale_factor
 weight_repulsion=$weight_repulsion
-sparseblock='SparsifyFiltersLayer'
+sparseblock='SparsifyFiltersLayer' # SparsifyLayersGroup
 seed=42
 eval_pretrained=False
 num_classes=10
@@ -143,8 +143,8 @@ original_dataset=cifar10
 steps=100
 lr=0.01
 batch_size=512
-total_attack_samples_train=5120
-total_attack_samples_test=5120
+total_attack_samples_train=7120
+total_attack_samples_test=7120
 attack_split='train'
 integrated=False
 
@@ -177,6 +177,8 @@ then
         --num_classes=$num_classes \
         --integrated=$integrated \
         --trainer_type=$trainer_type \
+        --scale_factor=$scale_factor \
+        --sparsefilter=$sparseblock
 
     fi
 
@@ -207,7 +209,9 @@ then
         --total_attack_samples=$total_attack_samples_test \
         --num_classes=$num_classes \
         --integrated=$integrated \
-        --trainer_type=$trainer_type
+        --trainer_type=$trainer_type \
+        --scale_factor=$scale_factor \
+        --sparsefilter=$sparseblock
     fi
 fi
 
@@ -259,7 +263,10 @@ then
         --integrated=$integrated \
         --attack=$attack \
         --c=$c_base \
-        --d=$d_base
+        --d=$d_base \
+        --weight_repulsion=$weight_repulsion \
+        --scale_factor=$scale_factor \
+        --sparsefilter=$sparseblock
 
     fi
 
@@ -300,7 +307,10 @@ then
         --integrated=$integrated \
         --attack=$attack \
         --c=$c_base \
-        --d=$d_base
+        --d=$d_base \
+        --weight_repulsion=$weight_repulsion \
+        --scale_factor=$scale_factor \
+        --sparsefilter=$sparseblock
 
     fi
     test_type=benign
@@ -340,7 +350,10 @@ then
         --integrated=$integrated \
         --attack=$attack \
         --c=$c_base \
-        --d=$d_base
+        --d=$d_base \
+        --weight_repulsion=$weight_repulsion \
+        --scale_factor=$scale_factor \
+        --sparsefilter=$sparseblock
     fi
 fi
 
@@ -394,7 +407,10 @@ then
         --integrated=$integrated \
         --attack=$attack \
         --c=$c_base \
-        --d=$d_base
+        --d=$d_base \
+        --weight_repulsion=$weight_repulsion \
+        --scale_factor=$scale_factor \
+        --sparsefilter=$sparseblock
 
     fi
 
@@ -439,7 +455,10 @@ then
         --integrated=$integrated \
         --attack=$attack \
         --c=$c_base \
-        --d=$d_base
+        --d=$d_base \
+        --weight_repulsion=$weight_repulsion \
+        --scale_factor=$scale_factor \
+        --sparsefilter=$sparseblock
 
     fi
 
@@ -496,7 +515,10 @@ then
         --integrated=$integrated \
         --attack=$attack \
         --c=$c_base \
-        --d=$d_base
+        --d=$d_base \
+        --weight_repulsion=$weight_repulsion \
+        --scale_factor=$scale_factor \
+        --sparsefilter=$sparseblock
     fi
 
     extract_split=test
@@ -539,7 +561,10 @@ then
         --integrated=$integrated \
         --attack=$attack \
         --c=$c_base \
-        --d=$d_base
+        --d=$d_base \
+        --weight_repulsion=$weight_repulsion \
+        --scale_factor=$scale_factor \
+        --sparsefilter=$sparseblock
     fi
 fi
 
@@ -624,7 +649,10 @@ train=False
         --integrated=$integrated \
         --attack=$attack \
         --c=$c_base \
-        --d=$d_base
+        --d=$d_base \
+        --weight_repulsion=$weight_repulsion \
+        --scale_factor=$scale_factor \
+        --sparsefilter=$sparseblock
     
         cd ${home_dir}
         python3 feature_extraction.py \
@@ -662,7 +690,10 @@ train=False
         --integrated=$integrated \
         --attack=$attack \
         --c=$c_base \
-        --d=$d_base
+        --d=$d_base \
+        --weight_repulsion=$weight_repulsion \
+        --scale_factor=$scale_factor \
+        --sparsefilter=$sparseblock
 
 
         # Test RBF Kernel
@@ -728,7 +759,10 @@ train=False
         --integrated=$integrated \
         --attack=$attack \
         --c=$c_base \
-        --d=$d_base
+        --d=$d_base \
+        --weight_repulsion=$weight_repulsion \
+        --scale_factor=$scale_factor \
+        --sparsefilter=$sparseblock
     
     
         cd ${home_dir}
@@ -767,7 +801,10 @@ train=False
         --integrated=$integrated \
         --attack=$attack \
         --c=$c_base \
-        --d=$d_base
+        --d=$d_base \
+        --weight_repulsion=$weight_repulsion \
+        --scale_factor=$scale_factor \
+        --sparsefilter=$sparseblock
 
 
 
@@ -807,7 +844,7 @@ train=False
 
 original_dataset=cifar10
 c_attack=0.3
-d_attack=0.0
+d_attack=0.3
 
 # Quantized
 if [ "$detector_type" = 'Quantized' ]
@@ -819,7 +856,7 @@ fi
 
 steps=100
 lr=0.01
-batch_size=256
+batch_size=512
 total_attack_samples_test=5120
 
 
@@ -853,6 +890,8 @@ then
     --integrated=$integrated \
     --total_train_samples=$total_attack_samples \
     --trainer_type=$trainer_type \
+    --scale_factor=$scale_factor \
+    --sparsefilter=$sparseblock
 
 fi
 
@@ -896,7 +935,10 @@ then
     --integrated=$integrated \
     --attack=$attack \
     --c=$c_attack \
-    --d=$d_attack
+    --d=$d_attack \
+    --weight_repulsion=$weight_repulsion \
+    --scale_factor=$scale_factor \
+    --sparsefilter=$sparseblock
 
     # Feature extraction from adversarial samples
     cd ${home_dir}
@@ -935,7 +977,10 @@ then
     --integrated=$integrated \
     --attack=$attack\
     --c=$c_attack \
-    --d=$d_attack
+    --d=$d_attack \
+    --weight_repulsion=$weight_repulsion \
+    --scale_factor=$scale_factor \
+    --sparsefilter=$sparseblock
 
 
     # Test RBF

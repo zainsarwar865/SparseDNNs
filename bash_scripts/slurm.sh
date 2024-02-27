@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --partition=general
+#SBATCH --partition=next-gen
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
@@ -7,9 +7,8 @@
 #SBATCH --time=03:55:00
 #SBATCH --output=/home/zsarwar/slurm/out/p%j.%N.stdout
 #SBATCH --error=/home/zsarwar/slurm/out/%j.%N.stderr
-#SBATCH --job-name=kernelCNN
-#SBATCH --gres=gpu:a30:1
-
+#SBATCH --job-name=train_randCNN
+#SBATCH --gres=gpu:h100:1
 
 # >>> conda initialize >>>
 # !! Contents within this block are managed by 'conda init' !!
@@ -30,4 +29,4 @@ unset __conda_setup
 conda activate "/home/zsarwar/.conda/envs/cnn"
 
 
-./randCNN_kernel.sh
+./randCNN.sh
