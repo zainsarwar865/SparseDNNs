@@ -236,11 +236,18 @@ print("Testing model...")
 
 def main():
     if args.seed is not None:
-        random.seed(args.seed)
-        torch.manual_seed(args.seed)
+        #random.seed(args.seed)
+        #torch.manual_seed(args.seed)
+        #cudnn.deterministic = True
+        #cudnn.benchmark = False
+        #np.random.seed(args.seed)
+
+        random.seed(13)
+        torch.manual_seed(13)
         cudnn.deterministic = True
         cudnn.benchmark = False
-        np.random.seed(args.seed)
+        np.random.seed(13)
+
 
     args.distributed = args.multiprocessing_distributed
     if torch.cuda.is_available():

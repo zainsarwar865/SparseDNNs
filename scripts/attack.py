@@ -89,8 +89,6 @@ else:
 
 
 
-
-
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 args.gpu = 0
 
@@ -128,7 +126,7 @@ if args.integrated:
     elif args.detector_type == 'Regular':
         from torchattacks.attacks.cw_integrated import CW_MLP as CW
 else:
-    from torchattacks import CW, DeepFool
+    from torchattacks.attacks.cw_rand import CW
 
 # Set seeds
 random.seed(args.seed)
@@ -244,23 +242,6 @@ elif args.attack_split == 'test':
 
 print(f"Size of dataset: {len(dataloader.dataset)} ")
 
-"""
-
-if args.integrated:
-    # Load RBF model
-    rbf_config = f"RBF_{args.attack}_{args.total_train_samples}_{args.detector_type}_{args.c}.pkl"
-    rbf_path = os.path.join(expr_dir, "RBF", rbf_config)
-
-    with open(rbf_path,'rb') as in_model:
-        clf = pickle.load(in_model)
-        
-    # Class RBF model
-    rbf_svm = RBF_SVM(clf)
-    rbf_svm = rbf_svm.to(device)
-# Start attack
-#mean = (0.4914, 0.4822, 0.4465)
-#std = (0.247, 0.243, 0.261)
-"""
 # Load trained MLP
 
 if args.integrated:        

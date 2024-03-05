@@ -98,7 +98,7 @@ def timeout_handler(signum, frame):
     sys.exit(0)
 
 
-x_seconds = 14000
+x_seconds = 13500
 
 
 # Set the signal handler
@@ -621,11 +621,22 @@ def train(train_loader, model, criterion, optimizer, epoch, device, args):
                     extract_indices = torch.arange(0, l2_blocks.shape[0], step=step_size)
                     repulsion_loss = -l2_blocks[extract_indices].sum()
                     tot_repulsion_loss+=repulsion_loss    
+        
+            # This cannot be a fixed hyperparameter
+            tot_repulsion_loss_c = -tot_repulsion_loss.clone().detach()
+            #print("Original tot_repulsion_loss_c", tot_repulsion_loss_c)
+            lam = 1
+            while tot_repulsion_loss_c > loss:
+                #print("During loop", tot_repulsion_loss_c)
+                tot_repulsion_loss_c = tot_repulsion_loss_c / 10
+                lam*=1/10
 
-        tot_repulsion_loss*=0.0001
-        #print(f"Loss:{loss}, tot_repulsion_loss: {tot_repulsion_loss}")
-        #logger.critical(f"Loss:{loss}, tot_repulsion_loss: {tot_repulsion_loss}")
-        loss+=tot_repulsion_loss
+
+            tot_repulsion_loss = lam * tot_repulsion_loss
+            print(lam)
+            #print(f"Loss:{loss}, tot_repulsion_loss: {tot_repulsion_loss}")
+            #logger.critical(f"Loss:{loss}, tot_repulsion_loss: {tot_repulsion_loss}")
+            loss+=tot_repulsion_loss
         #measure accuracy and record loss
         acc1, acc5 = utils.accuracy(output, target, topk=(1, 2))
         #f1_score = compute_f1_score(output, target)
