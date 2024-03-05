@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from ..attack import Attack
+from ..attack_MLP import Attack
 
 class CW(Attack):
     r"""
@@ -79,7 +79,7 @@ class CW(Attack):
             # Calculate loss
             current_L2 = MSELoss(Flatten(adv_images), Flatten(images)).sum(dim=1)
             L2_loss = current_L2.sum()
-            outputs, _ = self.get_logits(adv_images)
+            outputs = self.get_logits(adv_images)
             if self.targeted:
                 f_loss = self.f(outputs, target_labels).sum()
             else:

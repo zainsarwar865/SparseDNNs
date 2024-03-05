@@ -1,9 +1,9 @@
 CREATE_ROOT=false
 TRAIN_MT_BASELINE=false
-RUN_ATTACK=false
-TEST=false
-FEATURE_EXTRACTION_BENIGN=true
-FEATURE_EXTRACTION_ADVERSARIAL=true
+RUN_ATTACK=true
+TEST=true
+FEATURE_EXTRACTION_BENIGN=false
+FEATURE_EXTRACTION_ADVERSARIAL=false
 TRAIN_MLP=false
 TEST_MT_INTEGRATED_PREATTACK=false
 RUN_ATTACK_INTEGRATED=false
@@ -22,9 +22,9 @@ seed=42
 attack="CW"
 detector_type="Regular" # Regular
 scale_factor=2
-weight_repulsion="True"
+weight_repulsion="False"
 
-c_base=0.1
+c_base=0.4
 d_base=0
 
 
@@ -89,14 +89,14 @@ external_augmentation=False
 test_per_class=True
 original_dataset=$mt_dataset
 original_config=$mt_config
-model='resnet18'
+model='MLP'
 trainer_type="MT_Baseline"
 mt_hash_config="${trainer_type}_${original_dataset}_${original_config}_${model}_pretrained-${pretrained}_freeze-layers-${freeze_layers}_lr-${lr}_batch_size-${batch_size}_lr-warmup-epochs-${lr_warmup_epochs}_lr-warmup-decay-${lr_warmup_decay}_label-smoothing-${label_smoothing}_mixup-alpha-${mixum_alpha}_cutmix_alpha-${cutmix_alpha}_random-erasing-${random_erasing}_model-ema-${model_ema}_weight_decay-${weight_decay}_epochs-${epochs}_eval-pretrained-${eval_pretrained}_weight-repulsion-${weight_repulsion}_scale-factor_${scale_factor}_sparseblock-${sparseblock}_seed-${seed}"
 
 if [ "$TRAIN_MT_BASELINE" = true ]
 then
     cd ${home_dir}
-    python3 train.py \
+    python3 train_mlp.py \
     --gpu=$gpu \
     --base_dir=$base_dir \
     --root_hash_config=$root_hash_config \
@@ -155,7 +155,7 @@ then
     if [ "$RUN_ATTACK_TRAIN" = true ]
     then
         cd ${home_dir}
-        python3 attack.py \
+        python3 attack_mlp.py \
         --gpu=$gpu \
         --base_dir=$base_dir \
         --root_hash_config=$root_hash_config \
@@ -188,7 +188,7 @@ then
     if [ "$RUN_ATTACK_TEST" = true ]
     then
         cd ${home_dir}
-        python3 attack.py \
+        python3 attack_mlp.py \
         --gpu=$gpu \
         --base_dir=$base_dir \
         --root_hash_config=$root_hash_config \
@@ -230,7 +230,7 @@ then
     if [ "$TEST_ADVERSARIAL_TRAIN" = true ]
     then
         cd ${home_dir}
-        python3 test.py \
+        python3 test_mlp.py \
         --gpu=$gpu \
         --base_dir=$base_dir \
         --root_hash_config=$root_hash_config \
@@ -274,7 +274,7 @@ then
     if [ "$TEST_ADVERSARIAL_TEST" = true ]
     then
         cd ${home_dir}
-        python3 test.py \
+        python3 test_mlp.py \
         --gpu=$gpu \
         --base_dir=$base_dir \
         --root_hash_config=$root_hash_config \
@@ -317,7 +317,7 @@ then
     if [ "$TEST_BENIGN_TEST" = true ]
     then
         cd ${home_dir}
-        python3 test.py \
+        python3 test_mlp.py \
         --gpu=$gpu \
         --base_dir=$base_dir \
         --root_hash_config=$root_hash_config \
@@ -372,7 +372,7 @@ then
     if [ "$FEATURE_EXTRACTION_BENIGN_TRAIN" = true ]
     then
         cd ${home_dir}
-        python3 ft_extraction_maps.py \
+        python3 feature_extraction.py \
         --gpu=$gpu \
         --base_dir=$base_dir \
         --root_hash_config=$root_hash_config \
@@ -420,7 +420,7 @@ then
     if [ "$FEATURE_EXTRACTION_BENIGN_TEST" = true ]
     then
         cd ${home_dir}
-        python3 ft_extraction_maps.py \
+        python3 feature_extraction.py \
         --gpu=$gpu \
         --base_dir=$base_dir \
         --root_hash_config=$root_hash_config \
@@ -480,7 +480,7 @@ then
     if [ "$FEATURE_EXTRACTION_ADVERSARIAL_TRAIN" = true ]
     then
         cd ${home_dir}
-        python3 ft_extraction_maps.py \
+        python3 feature_extraction.py \
         --gpu=$gpu \
         --base_dir=$base_dir \
         --root_hash_config=$root_hash_config \
@@ -526,7 +526,7 @@ then
     if [ "$FEATURE_EXTRACTION_ADVERSARIAL_TEST" = true ]
     then
         cd ${home_dir}
-        python3 ft_extraction_maps.py \
+        python3 feature_extraction.py \
         --gpu=$gpu \
         --base_dir=$base_dir \
         --root_hash_config=$root_hash_config \

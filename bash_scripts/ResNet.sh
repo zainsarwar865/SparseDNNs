@@ -1,5 +1,5 @@
 CREATE_ROOT=false
-TRAIN_MT_BASELINE=false
+TRAIN_MT_BASELINE=true
 RUN_ATTACK=false
 TEST=false
 FEATURE_EXTRACTION_BENIGN=true
@@ -22,7 +22,7 @@ seed=42
 attack="CW"
 detector_type="Regular" # Regular
 scale_factor=2
-weight_repulsion="True"
+weight_repulsion="False"
 
 c_base=0.1
 d_base=0
@@ -34,7 +34,7 @@ d_base=0
 # MT Root parameters
 base_dir='/net/scratch/zsarwar/SparseDNNs'
 mt_dataset="cifar10"
-mt_config="randCNN"
+mt_config="Regular"
 mt_classes=10
 # root_config --> subset
 # Hash configs

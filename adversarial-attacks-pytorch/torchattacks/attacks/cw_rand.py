@@ -72,6 +72,19 @@ class CW(Attack):
 
         flipped_mask = torch.zeros(images.shape[0], dtype=torch.bool).to(self.device)
 
+        # For tracking moving average of successes/failures
+        batch_size = images.shape[0]
+        condition = torch.randn((batch_size,)) > 0
+        mask = condition
+        binary_success = condition.to(dtype=int)
+        cache_size =  10
+        success_thres = 0.5
+
+        moving_results = torch.zeros(size=(batch_size, cache_size)).to(device=self.device)
+        moving_results[:] = torch.nan
+        moving_avg = torch.zeros(size=(batch_size,)).to(device=self.device)
+        best_moving_avg = torch.negative(torch.ones(size=(batch_size,))).to(device=self.device)
+
         for step in range(self.steps):
             # Get adversarial images
             print("On step : ", step)
@@ -107,29 +120,24 @@ class CW(Attack):
             # Filter out images that get either correct predictions or non-decreasing loss,
             # i.e., only images that are both misclassified and loss-decreasing are left
             
-            mask = condition * (best_L2 > current_L2.detach())
+            #mask = condition * (best_L2 > current_L2.detach())
+            mask = condition
             flipped_mask = torch.logical_or(mask, flipped_mask)
             best_L2 = mask * current_L2.detach() + (1 - mask) * best_L2
             
+            # Update running average values
+            binary_success = mask
+            cache_idx = step % cache_size
+            moving_results[:, cache_idx] = binary_success
+            moving_avg = torch.nanmean(moving_results, dim=1)
+            mask_mov_avg = moving_avg > best_moving_avg
+            mask = torch.logical_and(mask_mov_avg, mask).float()
             mask = mask.view([-1] + [1] * (dim - 1))
             best_adv_images = mask * adv_images.detach() + (1 - mask) * best_adv_images
 
-            # Early stop when loss does not converge.
-            # max(.,1) To prevent MODULO BY ZERO error in the next step.
-            """
-            if step % max(self.steps // 10, 1) == 0:
-                if cost.item() > prev_cost:
-                    best_adv_images = best_adv_images.chromdetach().cpu()
-                    return best_adv_images, images.cpu()
-                prev_cost = cost.item()
-            """
 
-        #adv_images = adv_images.detach().cpu()
         # Only return successful adversarial samples
         flipped_indices = torch.where(flipped_mask == True)[0]
-        #best_adv_images = best_adv_images[flipped_indices]
-        #images = images[flipped_indices]
-        #sub_labels = labels.detach()[flipped_indices].cpu()
         flipped_indices = flipped_indices.detach().cpu()
         best_adv_images = best_adv_images.detach().cpu()
         return best_adv_images, images.cpu(), flipped_indices
