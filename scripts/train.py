@@ -1,45 +1,5 @@
 import argparse
 import os
-import random
-import shutil
-import time
-import warnings
-from enum import Enum
-import yaml
-import pickle
-import numpy as np
-import pandas as pd
-from glob import glob
-import torch
-import torch.backends.cudnn as cudnn
-import torch.distributed as dist
-import torch.multiprocessing as mp
-import torch.nn as nn
-import torch.nn.parallel
-import torch.optim
-import torch.utils.data
-import torch.utils.data.distributed
-import torchvision.datasets as datasets
-import torchvision
-import torchvision.models as models
-from torchvision.models import resnet50, resnet18, ResNet50_Weights, ResNet18_Weights
-import torchvision.transforms as transforms
-from torch.optim.lr_scheduler import StepLR, CosineAnnealingLR, LinearLR, SequentialLR
-from torch.utils.data import Subset
-from utils.dataset import CustomImageDataset
-import hashlib
-from sklearn.metrics import f1_score
-import logging
-from collections import Counter
-from utils.transforms import get_mixup_cutmix
-from torch.utils.data.dataloader import default_collate
-import utils.utils as utils
-import utils.configs as configs
-from utils.wide_resnet import WideResNet
-
-model_names = sorted(name for name in models.__dict__
-    if name.islower() and not name.startswith("__")
-    and callable(models.__dict__[name]))
 
 parser = argparse.ArgumentParser(description='PyTorch Training')
 parser.add_argument('--root_hash_config', type=str)
@@ -47,7 +7,7 @@ parser.add_argument('--base_dir')
 parser.add_argument('--mt_hash_config', type=str)
 parser.add_argument('--arch', metavar='ARCH',)
 parser.add_argument('--num_eval_epochs', type=int)
-parser.add_argument('--workers', default=4, type=int)
+parser.add_argument('--workers', default=2, type=int)
 parser.add_argument('--epochs', type=int)
 parser.add_argument('--start_epoch', type=int, default=0)
 parser.add_argument('--batch_size', type=int)
@@ -83,8 +43,70 @@ parser.add_argument('--original_dataset', type=str)
 parser.add_argument('--original_config', type=str)
 parser.add_argument('--c', type=float)
 parser.add_argument('--d', type=float)
-
 args = parser.parse_args()
+
+os.environ['CUDA_VISIBLE_DEVICES']=str(args.gpu)
+args.gpu = 0
+
+
+import random
+import shutil
+import time
+import warnings
+from enum import Enum
+import yaml
+import pickle
+import numpy as np
+import pandas as pd
+from glob import glob
+import torch
+import torch.backends.cudnn as cudnn
+import torch.distributed as dist
+import torch.multiprocessing as mp
+import torch.nn as nn
+import torch.nn.parallel
+import torch.optim
+import torch.utils.data
+import torch.utils.data.distributed
+import torchvision.datasets as datasets
+import torchvision
+import torchvision.models as models
+#from torchvision.models import resnet50, resnet18, ResNet50_Weights, ResNet18_Weights
+import torchvision.transforms as transforms
+from torch.optim.lr_scheduler import StepLR, CosineAnnealingLR, LinearLR, SequentialLR
+from torch.utils.data import Subset
+from utils.dataset import CustomImageDataset
+import hashlib
+from sklearn.metrics import f1_score
+import logging
+from collections import Counter
+from utils.transforms import get_mixup_cutmix
+from torch.utils.data.dataloader import default_collate
+import utils.utils as utils
+from utils.resnet import resnet18
+import utils.configs as configs
+from typing import Type, Union, Any
+import signal
+import sys
+
+def timeout_handler(signum, frame):
+    print("Script completed after x seconds.")
+    sys.exit(0)
+
+
+x_seconds = 13500
+
+
+# Set the signal handler
+signal.signal(signal.SIGALRM, timeout_handler)
+
+# Set the alarm to trigger after x_seconds
+signal.alarm(x_seconds)
+
+model_names = sorted(name for name in models.__dict__
+    if name.islower() and not name.startswith("__")
+    and callable(models.__dict__[name]))
+
 
 # Handle bash boolean variables
 if args.pretrained == "True":
@@ -122,6 +144,14 @@ if args.model_ema == "True":
 else:
     args.model_ema = False
 
+
+if args.resume == "True":
+    args.resume = True
+else:
+    args.resume = False
+
+
+
 # assertions to avoid divide by 0 issue in learning rate
 assert args.epochs>args.lr_warmup_epochs, "Total epochs must be more than warmup epochs"
 
@@ -146,6 +176,14 @@ print("Expr dir", expr_dir)
 if not os.path.exists(expr_dir):
     os.makedirs(expr_dir)
 
+
+# Read MT's baseline checkpoint path
+mt_baseline_hash_config = expr_name
+mt_baseline_path = os.path.join(mt_root_directory, mt_baseline_hash_config)
+ckpt_config = "Checkpoints/checkpoint.pth.tar"
+mt_baseline_ckpt_path = os.path.join(mt_baseline_path, ckpt_config)
+
+
 # Make checkpoints and metrics directory
 ckpt_folder = "Checkpoints"
 ckpt_dir = os.path.join(expr_dir, ckpt_folder)
@@ -153,12 +191,14 @@ metrics_folder = "Metrics"
 metrics_dir = os.path.join(expr_dir, metrics_folder)
 relu_folder = "ReLUs"
 relu_dir = os.path.join(expr_dir, relu_folder)
-rbf_folder = "RBF"
+rbf_folder = "MLP"
 rbf_dir = os.path.join(expr_dir, rbf_folder)
 adv_datasets_folder = "Adversarial_Datasets"
 adv_datasets_dir = os.path.join(expr_dir, adv_datasets_folder)
 benign_datasets_folder = "Benign_Datasets"
 benign_datasets_dir = os.path.join(expr_dir, benign_datasets_folder)
+logs_folder = "Logs"
+logs_datasets_dir = os.path.join(expr_dir, logs_folder)
 preds_folder = "Predictions"
 preds_dir = os.path.join(expr_dir, preds_folder)
 # Sub folders for preds_dir
@@ -191,6 +231,9 @@ if not os.path.exists(rbf_preds_dir):
     os.makedirs(rbf_preds_dir)
 if not os.path.exists(perturbed_indices_dir):
     os.makedirs(perturbed_indices_dir)
+if not os.path.exists(logs_datasets_dir):
+    os.makedirs(logs_datasets_dir)
+
 
 # Create log files
 if(args.evaluate):
@@ -201,7 +244,7 @@ else:
 
 logging.basicConfig(filename=logging_path,
                     format='%(asctime)s %(message)s',
-                    filemode='w')
+                    filemode='w+')
  
 # Creating an object
 logger = logging.getLogger()
@@ -215,11 +258,10 @@ logger.setLevel(logging.INFO)
 expr_config_dict = {}
 all_args = args._get_kwargs()
 expr_config_dict = {tup[0]:tup[1] for tup in all_args}
-yaml_file = os.path.join(expr_dir, "Config.yaml")
+yaml_file = os.path.join(expr_dir, "Logs/Config.yaml")
 with open(yaml_file, 'w') as yaml_out:
     yaml.dump(expr_config_dict, yaml_out)
 
-exit()
 
 def main():
     if args.seed is not None:
@@ -255,25 +297,17 @@ def main_worker(gpu, ngpus_per_node, args):
 
     # create model
     if args.pretrained:
-        logger.critical(f"=> using pre-trained model {args.arch}")
-        if args.arch == 'wideresnet':
-            model = WideResNet()
-        
-        elif args.arch == 'resnet18':
-            model = models.__dict__[args.arch](weights=ResNet18_Weights.IMAGENET1K_V2)
-        elif args.arch == 'resnet50':
-            model = models.__dict__[args.arch](weights=ResNet50_Weights.IMAGENET1K_V2)
+        logger.critical(f"=> using pre-trained model {args.arch}")        
+        if args.arch == 'resnet18':
+            model = resnet18()
         if args.new_classifier:
-            if args.arch == 'resnet50':
-               model.fc = nn.Linear(in_features=2048, out_features=args.num_classes, bias=True)
             if args.arch == 'resnet18':
                model.fc = nn.Linear(in_features=512, out_features=args.num_classes, bias=True)
     else:
         logger.critical(f"=> creating model {args.arch}")
-        model = models.__dict__[args.arch]()
+        if args.arch == 'resnet18':
+            model = resnet18()
         if args.new_classifier:
-            if args.arch == 'resnet50':
-                model.fc = nn.Linear(in_features=2048, out_features=args.num_classes, bias=True)
             if args.arch == 'resnet18':
                 model.fc = nn.Linear(in_features=512, out_features=args.num_classes, bias=True)
     
@@ -353,14 +387,14 @@ def main_worker(gpu, ngpus_per_node, args):
     """
     # optionally resume from a checkpoint
     if args.resume:
-        if os.path.isfile(args.resume):
-            print("=> loading checkpoint '{}'".format(args.resume))
+        if os.path.isfile(mt_baseline_ckpt_path):
+            print("=> loading checkpoint '{}'".format(mt_baseline_ckpt_path))
             if args.gpu is None:
-                checkpoint = torch.load(args.resume)
+                checkpoint = torch.load(mt_baseline_ckpt_path)
             elif torch.cuda.is_available():
                 # Map model to be loaded to specified single gpu.
                 loc = 'cuda:{}'.format(args.gpu)
-                checkpoint = torch.load(args.resume, map_location=loc)
+                checkpoint = torch.load(mt_baseline_ckpt_path, map_location=loc)
             args.start_epoch = checkpoint['epoch']
             best_acc1 = checkpoint['best_acc1']
             if args.gpu is not None:
@@ -370,9 +404,9 @@ def main_worker(gpu, ngpus_per_node, args):
             model.load_state_dict(checkpoint['state_dict'])
             optimizer.load_state_dict(checkpoint['optimizer'])
             scheduler.load_state_dict(checkpoint['scheduler'])
-            logger.critical(f"=> loaded checkpoint '{args.resume}' (epoch {args.start_epoch})")
+            logger.critical(f"=> loaded checkpoint '{mt_baseline_ckpt_path}' (epoch {args.start_epoch})")
         else:
-            logger.critical(f"=> no checkpoint found at '{args.resume}'")
+            logger.critical(f"=> no checkpoint found at '{mt_baseline_ckpt_path}'")
 
     random_seed=args.seed
     # GO-GO-GO!
@@ -458,13 +492,11 @@ def main_worker(gpu, ngpus_per_node, args):
     elif args.original_dataset == 'cifar100':
 
         trainset = torchvision.datasets.CIFAR100(root=dataset_path, train=True,
-                                                download=True, transform=transform_train)
+                                                download=False, transform=transform_train)
 
         valset = torchvision.datasets.CIFAR100(root=dataset_path, train=False,
-                                            download=True, transform=transform_test
+                                            download=False, transform=transform_test
                                             )
-
-
 
     train_loader = torch.utils.data.DataLoader(trainset, batch_size=args.batch_size,
                                             shuffle=True, num_workers=args.workers, collate_fn=collate_fn)
@@ -473,7 +505,6 @@ def main_worker(gpu, ngpus_per_node, args):
                                             shuffle=False, num_workers=args.workers)
     
     for epoch in range(args.start_epoch, args.epochs):
-
         # train for one epoch
         train(train_loader, model, criterion, optimizer, epoch, device, args)
         if(((epoch + 1) % args.num_eval_epochs) == 0):
@@ -483,6 +514,14 @@ def main_worker(gpu, ngpus_per_node, args):
             # remember best acc@1 and save checkpoint
             is_best = acc1 > best_acc1
             best_acc1 = max(acc1, best_acc1)
+            save_checkpoint(args, {
+                'epoch': epoch + 1,
+                'arch': args.arch,
+                'state_dict': model.state_dict(),
+                'best_acc1': best_acc1,
+                'optimizer' : optimizer.state_dict(),
+                'scheduler' : scheduler.state_dict()}, epoch, is_best)
+            """
             if is_best:
                 save_checkpoint(args, {
                     'epoch': epoch + 1,
@@ -491,7 +530,8 @@ def main_worker(gpu, ngpus_per_node, args):
                     'best_acc1': best_acc1,
                     'optimizer' : optimizer.state_dict(),
                     'scheduler' : scheduler.state_dict()}, epoch, is_best)
-
+            # Also save latest checkpoint
+            """
 
     # Test after training
     # Loading the best checkpoint
@@ -549,10 +589,10 @@ def train(train_loader, model, criterion, optimizer, epoch, device, args):
         target = target.to(device, non_blocking=True)
 
         # compute output
-        output = model(images)
+        output, _ = model(images)
         loss = criterion(output, target)
 
-        # measure accuracy and record loss
+        #measure accuracy and record loss
         acc1, acc5 = utils.accuracy(output, target, topk=(1, 2))
         #f1_score = compute_f1_score(output, target)
         losses.update(loss.item(), images.size(0))
@@ -597,7 +637,7 @@ def validate(val_loader, model, criterion, args):
                     target = target.cuda(args.gpu, non_blocking=True)
 
                 # compute output
-                output = model(images)
+                output, _ = model(images)
                 loss = criterion(output, target)
 
                 # measure accuracy and record loss
@@ -642,18 +682,16 @@ def validate(val_loader, model, criterion, args):
     return top1.avg
 
 def save_checkpoint(args, state, epoch, is_best, filename='checkpoint.pth.tar'):
-    #ckpt_name = f"{epoch+1}_{filename}"
-    #filename = os.path.join(ckpt_dir, ckpt_name)
-    ckpt_name = "model_best.pth.tar"
+    ckpt_name = f"{filename}"
     ckpt_name = os.path.join(ckpt_dir, ckpt_name)
     torch.save(state, ckpt_name)
-    """
+    
     if is_best:
         logger.critical("Saving best model")
         best_ckpt_name = "model_best.pth.tar"
         best_ckpt_path = os.path.join(ckpt_dir, best_ckpt_name)
-        shutil.copyfile(filename, best_ckpt_path)
-    """
+        shutil.copyfile(ckpt_name, best_ckpt_path)
+
 class Summary(Enum):
     NONE = 0
     AVERAGE = 1
