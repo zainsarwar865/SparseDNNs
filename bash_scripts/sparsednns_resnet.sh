@@ -1,5 +1,5 @@
 CREATE_ROOT=false
-TRAIN_MT_BASELINE=false
+TRAIN_MT_BASELINE=true
 RUN_ATTACK=false
 TEST=false
 FEATURE_EXTRACTION_BENIGN=false
@@ -7,7 +7,7 @@ FEATURE_EXTRACTION_ADVERSARIAL=false
 TRAIN_MLP=false
 TEST_MT_INTEGRATED_PREATTACK=false
 RUN_ATTACK_INTEGRATED=false
-TEST_INTEGRATED_ADVERSARIAL=true
+TEST_INTEGRATED_ADVERSARIAL=false
 
 #echo $y
 BashName=${0##*/}
@@ -31,8 +31,8 @@ d_base=0
 
 # MT Root parameters
 base_dir='/bigstor/zsarwar/SparseDNNs'
-mt_dataset="CIFAR10"
-mt_config="full_mlp"
+mt_dataset="cifar10"
+mt_config="Regular"
 mt_classes=10
 # root_config --> subset
 # Hash configs
@@ -61,7 +61,7 @@ cd ${home_dir}
 #############################################################################################
 
 # MT train parameters
-batch_size=128
+batch_size=512
 lr=0.1
 weight_decay=0.0001
 lr_warmup_epochs=2
@@ -73,7 +73,7 @@ random_erasing=0.1
 model_ema=False
 epochs=1000
 num_eval_epochs=1
-resume=''
+resume=True
 pretrained=False
 freeze_layers=False
 seed=42
