@@ -203,7 +203,7 @@ if not os.path.exists(metrics_dir):
 
 # Create log files
 
-logging_path = os.path.join(expr_dir,f"Logs/Resnet_integrated-{args.integrated}-Type-{args.test_type}_Split-{args.attack_split}_Detector-{args.detector_type}.log")
+logging_path = os.path.join(expr_dir,f"Logs/Resnet_integrated-{args.integrated}-Type-{args.test_type}_Split-{args.attack_split}_Detector-{args.detector_type}_c-{args.c}.log")
 
 logging.basicConfig(filename=logging_path,
                     format='%(asctime)s %(message)s',
