@@ -1,9 +1,9 @@
 CREATE_ROOT=false
-TRAIN_MT_BASELINE=false
+TRAIN_MT_BASELINE=true
 RUN_ATTACK=false
 TEST=false
-FEATURE_EXTRACTION_BENIGN=true
-FEATURE_EXTRACTION_ADVERSARIAL=true
+FEATURE_EXTRACTION_BENIGN=false
+FEATURE_EXTRACTION_ADVERSARIAL=false
 TRAIN_MLP=false
 TEST_MT_INTEGRATED_PREATTACK=false
 RUN_ATTACK_INTEGRATED=false
@@ -24,7 +24,7 @@ detector_type="Regular" # Regular
 scale_factor=2
 weight_repulsion="True"
 
-c_base=0.1
+c_base=0.4
 d_base=0
 
 
@@ -73,7 +73,7 @@ mixup_alpha=0.2
 cutmix_alpha=0.2
 random_erasing=0.1
 model_ema=False
-epochs=2500
+epochs=2502
 num_eval_epochs=1
 resume=True
 pretrained=False

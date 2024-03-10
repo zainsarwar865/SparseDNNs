@@ -8,7 +8,7 @@
 #SBATCH --output=/home/zsarwar/slurm/out/p%j.%N.stdout
 #SBATCH --error=/home/zsarwar/slurm/out/%j.%N.stderr
 #SBATCH --job-name=kernelCNN
-#SBATCH --gres=gpu:a30:1
+#SBATCH --gres=gpu:rtx2080ti:1
 
 
 # >>> conda initialize >>>
