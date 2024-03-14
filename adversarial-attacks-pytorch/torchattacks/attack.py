@@ -76,9 +76,9 @@ class Attack(object):
     def get_logits(self, inputs, labels=None, *args, **kwargs):
         if self._normalization_applied is False:
             inputs = self.normalize(inputs)
-        logits, relu_feats = self.model(inputs)
-        return logits, relu_feats
-
+            
+        logits = self.model(inputs)
+        return logits
     @wrapper_method
     def _set_normalization_applied(self, flag):
         self._normalization_applied = flag
