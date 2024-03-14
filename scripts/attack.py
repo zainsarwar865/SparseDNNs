@@ -97,7 +97,7 @@ import torch.nn as nn
 import torchvision
 import torchvision.transforms as transforms
 #from torchvision.models import resnet18
-from utils.resnet_rand import resnet18, SparsifyFiltersLayer, SparsifyKernelGroups
+from utils.resnet_rand import SparsifyFiltersLayer, SparsifyKernelGroups
 from utils import configs
 import hashlib
 import logging
@@ -128,6 +128,7 @@ if args.integrated:
 else:
     from torchattacks.attacks.cw_rand import CW
 
+
 # Set seeds
 random.seed(args.seed)
 torch.manual_seed(args.seed)
@@ -138,14 +139,6 @@ np.random.seed(args.seed)
 print("Starting attack...")
 
 
-
-# Select sparseblock here
-sparseblock : Type[Union[SparsifyFiltersLayer, SparsifyKernelGroups]]
-
-if args.sparsefilter == 'SparsifyFiltersLayer':
-    sparseblock = SparsifyFiltersLayer
-elif args.sparsefilter == 'SparsifyKernelGroups':
-    sparseblock = SparsifyKernelGroups
 
 
 # GO-GO-GO!

@@ -26,8 +26,11 @@ weight_repulsion="False"
 
 c_base=0.3
 d_base=0
+epsilon_list=(0.002 0.004 0.006 0.008 0.01 0.012 0.014 0.016 0.018 0.02 0.022 0.024 0.026 0.028 0.03 0.032 0.034 0.036 0.038 0.04)
+#epsilon_list=(0.042 0.044 0.046 0.048 0.05  0.052 0.054)
+#epsilon_list=(0.056 0.058 0.060 0.062 0.064  0.066 0.068)
 
-
+#epsilon_list=(0.002)
 # Setup the directory for an experiment
 #############################################################################################
 
@@ -73,7 +76,7 @@ mixup_alpha=0.2
 cutmix_alpha=0.2
 random_erasing=0.1
 model_ema=False
-epochs=2500
+epochs=1500
 num_eval_epochs=1
 resume=True
 pretrained=False
@@ -135,16 +138,16 @@ fi
 #############################################################################################
 # Attack parameters
 
-RUN_ATTACK_TRAIN=true
+RUN_ATTACK_TRAIN=false
 RUN_ATTACK_TEST=true
 
 # Attack parameters
 original_dataset=cifar10
-steps=100
+steps=1500
 lr=0.01
 batch_size=512
-total_attack_samples_train=5120
-total_attack_samples_test=5120
+total_attack_samples_train=3560
+total_attack_samples_test=3560
 attack_split='train'
 integrated=False
 
@@ -155,7 +158,7 @@ then
     if [ "$RUN_ATTACK_TRAIN" = true ]
     then
         cd ${home_dir}
-        python3 attack_mlp.py \
+        python3 attack_bounded.py \
         --gpu=$gpu \
         --base_dir=$base_dir \
         --root_hash_config=$root_hash_config \
@@ -187,31 +190,35 @@ then
 
     if [ "$RUN_ATTACK_TEST" = true ]
     then
-        cd ${home_dir}
-        python3 attack_mlp.py \
-        --gpu=$gpu \
-        --base_dir=$base_dir \
-        --root_hash_config=$root_hash_config \
-        --mt_hash_config=$mt_hash_config \
-        --original_dataset=$original_dataset \
-        --model=$model \
-        --batch_size=$batch_size \
-        --lr=$lr \
-        --c=$c_base \
-        --d=$d_base \
-        --c_attack=$c_base \
-        --d_attack=$d_base \
-        --steps=$steps \
-        --seed=$seed \
-        --attack=$attack \
-        --attack_split=$attack_split \
-        --detector_type=$detector_type \
-        --total_attack_samples=$total_attack_samples_test \
-        --num_classes=$num_classes \
-        --integrated=$integrated \
-        --trainer_type=$trainer_type \
-        --scale_factor=$scale_factor \
-        --sparsefilter=$sparseblock
+        for epsilon in "${epsilon_list[@]}"
+        do       
+            cd ${home_dir}
+            python3 attack_bounded.py \
+            --gpu=$gpu \
+            --base_dir=$base_dir \
+            --root_hash_config=$root_hash_config \
+            --mt_hash_config=$mt_hash_config \
+            --original_dataset=$original_dataset \
+            --model=$model \
+            --batch_size=$batch_size \
+            --lr=$lr \
+            --c=$c_base \
+            --d=$d_base \
+            --c_attack=$c_base \
+            --d_attack=$d_base \
+            --eps=$epsilon \
+            --steps=$steps \
+            --seed=$seed \
+            --attack=$attack \
+            --attack_split=$attack_split \
+            --detector_type=$detector_type \
+            --total_attack_samples=$total_attack_samples_test \
+            --num_classes=$num_classes \
+            --integrated=$integrated \
+            --trainer_type=$trainer_type \
+            --scale_factor=$scale_factor \
+            --sparsefilter=$sparseblock
+        done
     fi
 fi
 
@@ -220,9 +227,9 @@ fi
 #############################################################################################
 # Test adversarial samples on the model
 
-TEST_ADVERSARIAL_TRAIN=true
+TEST_ADVERSARIAL_TRAIN=false
 TEST_ADVERSARIAL_TEST=true
-TEST_BENIGN_TEST=true
+TEST_BENIGN_TEST=false
 test_type=adversarial
 if [ "$TEST" = true ]
 then
@@ -230,7 +237,7 @@ then
     if [ "$TEST_ADVERSARIAL_TRAIN" = true ]
     then
         cd ${home_dir}
-        python3 test_mlp.py \
+        python3 test.py \
         --gpu=$gpu \
         --base_dir=$base_dir \
         --root_hash_config=$root_hash_config \
@@ -273,51 +280,57 @@ then
     attack_split='test'
     if [ "$TEST_ADVERSARIAL_TEST" = true ]
     then
-        cd ${home_dir}
-        python3 test_mlp.py \
-        --gpu=$gpu \
-        --base_dir=$base_dir \
-        --root_hash_config=$root_hash_config \
-        --mt_hash_config=$mt_hash_config \
-        --epochs=$epochs \
-        --num_eval_epochs=$num_eval_epochs \
-        --arch=$model \
-        --batch_size=$batch_size \
-        --lr=$lr \
-        --weight_decay=$weight_decay \
-        --lr_warmup_epochs=$lr_warmup_epochs \
-        --lr_warmup_decay=$lr_warmup_decay \
-        --label_smoothing=$label_smoothing \
-        --mixup_alpha=$mixup_alpha \
-        --cutmix_alpha=$cutmix_alpha \
-        --random_erasing=$random_erasing \
-        --model_ema=False \
-        --pretrained=$pretrained \
-        --freeze_layers=$freeze_layers \
-        --seed=$seed \
-        --num_classes=$num_classes \
-        --original_dataset=$original_dataset \
-        --original_config=$original_config \
-        --trainer_type=$trainer_type \
-        --new_classifier=$new_classifier \
-        --test_type=$test_type \
-        --attack_split=$attack_split \
-        --detector_type=$detector_type \
-        --total_attack_samples=$total_attack_samples_test \
-        --integrated=$integrated \
-        --attack=$attack \
-        --c=$c_base \
-        --d=$d_base \
-        --weight_repulsion=$weight_repulsion \
-        --scale_factor=$scale_factor \
-        --sparsefilter=$sparseblock
+
+        for epsilon in "${epsilon_list[@]}"
+        do
+
+            cd ${home_dir}
+            python3 test.py \
+            --gpu=$gpu \
+            --base_dir=$base_dir \
+            --root_hash_config=$root_hash_config \
+            --mt_hash_config=$mt_hash_config \
+            --epochs=$epochs \
+            --num_eval_epochs=$num_eval_epochs \
+            --arch=$model \
+            --batch_size=$batch_size \
+            --lr=$lr \
+            --weight_decay=$weight_decay \
+            --lr_warmup_epochs=$lr_warmup_epochs \
+            --lr_warmup_decay=$lr_warmup_decay \
+            --label_smoothing=$label_smoothing \
+            --mixup_alpha=$mixup_alpha \
+            --cutmix_alpha=$cutmix_alpha \
+            --random_erasing=$random_erasing \
+            --model_ema=False \
+            --pretrained=$pretrained \
+            --freeze_layers=$freeze_layers \
+            --seed=$seed \
+            --num_classes=$num_classes \
+            --original_dataset=$original_dataset \
+            --original_config=$original_config \
+            --trainer_type=$trainer_type \
+            --new_classifier=$new_classifier \
+            --test_type=$test_type \
+            --attack_split=$attack_split \
+            --detector_type=$detector_type \
+            --total_attack_samples=$total_attack_samples_test \
+            --integrated=$integrated \
+            --attack=$attack \
+            --c=$c_base \
+            --d=$d_base \
+            --weight_repulsion=$weight_repulsion \
+            --scale_factor=$scale_factor \
+            --sparsefilter=$sparseblock \
+            --eps=$epsilon
+        done
 
     fi
     test_type=benign
     if [ "$TEST_BENIGN_TEST" = true ]
     then
         cd ${home_dir}
-        python3 test_mlp.py \
+        python3 test.py \
         --gpu=$gpu \
         --base_dir=$base_dir \
         --root_hash_config=$root_hash_config \
@@ -372,7 +385,7 @@ then
     if [ "$FEATURE_EXTRACTION_BENIGN_TRAIN" = true ]
     then
         cd ${home_dir}
-        python3 feature_extraction.py \
+        python3 ft_extraction_maps.py \
         --gpu=$gpu \
         --base_dir=$base_dir \
         --root_hash_config=$root_hash_config \
@@ -420,7 +433,7 @@ then
     if [ "$FEATURE_EXTRACTION_BENIGN_TEST" = true ]
     then
         cd ${home_dir}
-        python3 feature_extraction.py \
+        python3 ft_extraction_maps.py \
         --gpu=$gpu \
         --base_dir=$base_dir \
         --root_hash_config=$root_hash_config \
@@ -480,7 +493,7 @@ then
     if [ "$FEATURE_EXTRACTION_ADVERSARIAL_TRAIN" = true ]
     then
         cd ${home_dir}
-        python3 feature_extraction.py \
+        python3 ft_extraction_maps.py \
         --gpu=$gpu \
         --base_dir=$base_dir \
         --root_hash_config=$root_hash_config \
@@ -526,7 +539,7 @@ then
     if [ "$FEATURE_EXTRACTION_ADVERSARIAL_TEST" = true ]
     then
         cd ${home_dir}
-        python3 feature_extraction.py \
+        python3 ft_extraction_maps.py \
         --gpu=$gpu \
         --base_dir=$base_dir \
         --root_hash_config=$root_hash_config \

@@ -1,9 +1,9 @@
 CREATE_ROOT=false
-TRAIN_MT_BASELINE=true
-RUN_ATTACK=false
-TEST=false
-FEATURE_EXTRACTION_BENIGN=true
-FEATURE_EXTRACTION_ADVERSARIAL=true
+TRAIN_MT_BASELINE=false
+RUN_ATTACK=true
+TEST=true
+FEATURE_EXTRACTION_BENIGN=false
+FEATURE_EXTRACTION_ADVERSARIAL=false
 TRAIN_MLP=false
 TEST_MT_INTEGRATED_PREATTACK=false
 RUN_ATTACK_INTEGRATED=false
@@ -22,11 +22,11 @@ seed=42
 attack="CW"
 detector_type="Regular" # Regular
 scale_factor=2
-weight_repulsion="False"
+weight_repulsion="True"
 
-c_base=0.1
+c_base=0.3
 d_base=0
-
+eps=0.025
 
 # Setup the directory for an experiment
 #############################################################################################
@@ -34,7 +34,7 @@ d_base=0
 # MT Root parameters
 base_dir='/net/scratch/zsarwar/SparseDNNs'
 mt_dataset="cifar10"
-mt_config="Regular"
+mt_config="randCNN"
 mt_classes=10
 # root_config --> subset
 # Hash configs
@@ -73,7 +73,7 @@ mixup_alpha=0.2
 cutmix_alpha=0.2
 random_erasing=0.1
 model_ema=False
-epochs=2500
+epochs=1000
 num_eval_epochs=1
 resume=True
 pretrained=False
@@ -96,7 +96,7 @@ mt_hash_config="${trainer_type}_${original_dataset}_${original_config}_${model}_
 if [ "$TRAIN_MT_BASELINE" = true ]
 then
     cd ${home_dir}
-    python3 train.py \
+    python3 train_resnet.py \
     --gpu=$gpu \
     --base_dir=$base_dir \
     --root_hash_config=$root_hash_config \
@@ -125,26 +125,23 @@ then
     --original_config=$original_config \
     --trainer_type=$trainer_type \
     --c=$c_base \
-    --d=$d_base \
-    --weight_repulsion=$weight_repulsion \
-    --scale_factor=$scale_factor \
-    --sparsefilter=$sparseblock
+    --d=$d_base
 
 fi
 
 #############################################################################################
 # Attack parameters
 
-RUN_ATTACK_TRAIN=true
+RUN_ATTACK_TRAIN=false
 RUN_ATTACK_TEST=true
 
 # Attack parameters
 original_dataset=cifar10
-steps=100
+steps=1500  
 lr=0.01
 batch_size=512
-total_attack_samples_train=5120
-total_attack_samples_test=5120
+total_attack_samples_train=512
+total_attack_samples_test=512
 attack_split='train'
 integrated=False
 
@@ -155,7 +152,7 @@ then
     if [ "$RUN_ATTACK_TRAIN" = true ]
     then
         cd ${home_dir}
-        python3 attack.py \
+        python3 attack_bounded.py \
         --gpu=$gpu \
         --base_dir=$base_dir \
         --root_hash_config=$root_hash_config \
@@ -168,6 +165,7 @@ then
         --d=$d_base \
         --c_attack=$c_base \
         --d_attack=$d_base \
+        --eps=$eps \
         --steps=$steps \
         --seed=$seed \
         --attack=$attack \
@@ -176,9 +174,7 @@ then
         --total_attack_samples=$total_attack_samples_train \
         --num_classes=$num_classes \
         --integrated=$integrated \
-        --trainer_type=$trainer_type \
-        --scale_factor=$scale_factor \
-        --sparsefilter=$sparseblock
+        --trainer_type=$trainer_type
 
     fi
 
@@ -188,7 +184,7 @@ then
     if [ "$RUN_ATTACK_TEST" = true ]
     then
         cd ${home_dir}
-        python3 attack.py \
+        python3 attack_bounded.py \
         --gpu=$gpu \
         --base_dir=$base_dir \
         --root_hash_config=$root_hash_config \
@@ -201,6 +197,7 @@ then
         --d=$d_base \
         --c_attack=$c_base \
         --d_attack=$d_base \
+        --eps=$eps \
         --steps=$steps \
         --seed=$seed \
         --attack=$attack \
@@ -209,9 +206,7 @@ then
         --total_attack_samples=$total_attack_samples_test \
         --num_classes=$num_classes \
         --integrated=$integrated \
-        --trainer_type=$trainer_type \
-        --scale_factor=$scale_factor \
-        --sparsefilter=$sparseblock
+        --trainer_type=$trainer_type
     fi
 fi
 
@@ -220,9 +215,9 @@ fi
 #############################################################################################
 # Test adversarial samples on the model
 
-TEST_ADVERSARIAL_TRAIN=true
+TEST_ADVERSARIAL_TRAIN=false
 TEST_ADVERSARIAL_TEST=true
-TEST_BENIGN_TEST=true
+TEST_BENIGN_TEST=false
 test_type=adversarial
 if [ "$TEST" = true ]
 then
@@ -264,9 +259,7 @@ then
         --attack=$attack \
         --c=$c_base \
         --d=$d_base \
-        --weight_repulsion=$weight_repulsion \
-        --scale_factor=$scale_factor \
-        --sparsefilter=$sparseblock
+        --eps=$eps
 
     fi
 
@@ -308,9 +301,7 @@ then
         --attack=$attack \
         --c=$c_base \
         --d=$d_base \
-        --weight_repulsion=$weight_repulsion \
-        --scale_factor=$scale_factor \
-        --sparsefilter=$sparseblock
+        --eps=$eps
 
     fi
     test_type=benign
@@ -351,9 +342,7 @@ then
         --attack=$attack \
         --c=$c_base \
         --d=$d_base \
-        --weight_repulsion=$weight_repulsion \
-        --scale_factor=$scale_factor \
-        --sparsefilter=$sparseblock
+        --eps=$eps
     fi
 fi
 

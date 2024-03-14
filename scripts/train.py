@@ -620,23 +620,21 @@ def train(train_loader, model, criterion, optimizer, epoch, device, args):
                     step_size = (l2_distances.shape[1] // (args.scale_factor)) + 1
                     extract_indices = torch.arange(0, l2_blocks.shape[0], step=step_size)
                     repulsion_loss = -l2_blocks[extract_indices].sum()
-                    tot_repulsion_loss+=(repulsion_loss * idx * 8)    
+                    tot_repulsion_loss+=(repulsion_loss * idx * 2) # Og 8    
         
             # This cannot be a fixed hyperparameter
             tot_repulsion_loss_c = -tot_repulsion_loss.clone().detach()
             #print("Original tot_repulsion_loss_c", tot_repulsion_loss_c)
             lam = 1
-            while tot_repulsion_loss_c > (loss*3):
-                #print("During loop", tot_repulsion_loss_c)
+            while tot_repulsion_loss_c > (loss): # og 3
                 tot_repulsion_loss_c = tot_repulsion_loss_c / 2
                 lam*=1/2
 
-
             tot_repulsion_loss = lam * tot_repulsion_loss
-            print(f"Loss:{loss}, tot_repulsion_loss: {tot_repulsion_loss}")
-            logger.critical(f"Loss:{loss}, tot_repulsion_loss: {tot_repulsion_loss}")
+            #print(f"Loss:{loss}, tot_repulsion_loss: {tot_repulsion_loss}")
+            #logger.critical(f"Loss:{loss}, tot_repulsion_loss: {tot_repulsion_loss}")
             loss+=tot_repulsion_loss
-        logger.critical(f"Final loss : {loss}")
+        #logger.critical(f"Final loss : {loss}")
         #measure accuracy and record loss
         acc1, acc5 = utils.accuracy(output, target, topk=(1, 2))
         #f1_score = compute_f1_score(output, target)

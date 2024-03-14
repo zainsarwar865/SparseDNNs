@@ -1,7 +1,7 @@
 CREATE_ROOT=false
-TRAIN_MT_BASELINE=true
-RUN_ATTACK=false
-TEST=false
+TRAIN_MT_BASELINE=false
+RUN_ATTACK=true
+TEST=true
 FEATURE_EXTRACTION_BENIGN=false
 FEATURE_EXTRACTION_ADVERSARIAL=false
 TRAIN_MLP=false
@@ -24,9 +24,10 @@ detector_type="Regular" # Regular
 scale_factor=2
 weight_repulsion="True"
 
-c_base=0.4
+c_base=0.3
 d_base=0
-
+eps=0.025
+epsilon_list=(0.002 0.004 0.006 0.008 0.01 0.012 0.014 0.016 0.018 0.02 0.022 0.024 0.026 0.028 0.03 0.032 0.034 0.036 0.038 0.04)
 
 # Setup the directory for an experiment
 #############################################################################################
@@ -73,7 +74,7 @@ mixup_alpha=0.2
 cutmix_alpha=0.2
 random_erasing=0.1
 model_ema=False
-epochs=2502
+epochs=1000
 num_eval_epochs=1
 resume=True
 pretrained=False
@@ -96,7 +97,7 @@ mt_hash_config="${trainer_type}_${original_dataset}_${original_config}_${model}_
 if [ "$TRAIN_MT_BASELINE" = true ]
 then
     cd ${home_dir}
-    python3 train.py \
+    python3 train_resnet.py \
     --gpu=$gpu \
     --base_dir=$base_dir \
     --root_hash_config=$root_hash_config \
@@ -125,26 +126,23 @@ then
     --original_config=$original_config \
     --trainer_type=$trainer_type \
     --c=$c_base \
-    --d=$d_base \
-    --weight_repulsion=$weight_repulsion \
-    --scale_factor=$scale_factor \
-    --sparsefilter=$sparseblock
+    --d=$d_base
 
 fi
 
 #############################################################################################
 # Attack parameters
 
-RUN_ATTACK_TRAIN=true
+RUN_ATTACK_TRAIN=false
 RUN_ATTACK_TEST=true
 
 # Attack parameters
 original_dataset=cifar10
-steps=100
+steps=1500  
 lr=0.01
 batch_size=512
-total_attack_samples_train=5120
-total_attack_samples_test=5120
+total_attack_samples_train=2560
+total_attack_samples_test=2560
 attack_split='train'
 integrated=False
 
@@ -155,7 +153,7 @@ then
     if [ "$RUN_ATTACK_TRAIN" = true ]
     then
         cd ${home_dir}
-        python3 attack.py \
+        python3 attack_bounded.py \
         --gpu=$gpu \
         --base_dir=$base_dir \
         --root_hash_config=$root_hash_config \
@@ -168,6 +166,7 @@ then
         --d=$d_base \
         --c_attack=$c_base \
         --d_attack=$d_base \
+        --eps=$eps \
         --steps=$steps \
         --seed=$seed \
         --attack=$attack \
@@ -176,9 +175,7 @@ then
         --total_attack_samples=$total_attack_samples_train \
         --num_classes=$num_classes \
         --integrated=$integrated \
-        --trainer_type=$trainer_type \
-        --scale_factor=$scale_factor \
-        --sparsefilter=$sparseblock
+        --trainer_type=$trainer_type
 
     fi
 
@@ -187,31 +184,36 @@ then
 
     if [ "$RUN_ATTACK_TEST" = true ]
     then
-        cd ${home_dir}
-        python3 attack.py \
-        --gpu=$gpu \
-        --base_dir=$base_dir \
-        --root_hash_config=$root_hash_config \
-        --mt_hash_config=$mt_hash_config \
-        --original_dataset=$original_dataset \
-        --model=$model \
-        --batch_size=$batch_size \
-        --lr=$lr \
-        --c=$c_base \
-        --d=$d_base \
-        --c_attack=$c_base \
-        --d_attack=$d_base \
-        --steps=$steps \
-        --seed=$seed \
-        --attack=$attack \
-        --attack_split=$attack_split \
-        --detector_type=$detector_type \
-        --total_attack_samples=$total_attack_samples_test \
-        --num_classes=$num_classes \
-        --integrated=$integrated \
-        --trainer_type=$trainer_type \
-        --scale_factor=$scale_factor \
-        --sparsefilter=$sparseblock
+
+        for epsilon in "${epsilon_list[@]}"
+        do       
+            cd ${home_dir}
+            python3 attack_bounded.py \
+            --gpu=$gpu \
+            --base_dir=$base_dir \
+            --root_hash_config=$root_hash_config \
+            --mt_hash_config=$mt_hash_config \
+            --original_dataset=$original_dataset \
+            --model=$model \
+            --batch_size=$batch_size \
+            --lr=$lr \
+            --c=$c_base \
+            --d=$d_base \
+            --c_attack=$c_base \
+            --d_attack=$d_base \
+            --eps=$epsilon \
+            --steps=$steps \
+            --seed=$seed \
+            --attack=$attack \
+            --attack_split=$attack_split \
+            --detector_type=$detector_type \
+            --total_attack_samples=$total_attack_samples_test \
+            --num_classes=$num_classes \
+            --integrated=$integrated \
+            --trainer_type=$trainer_type
+            # or do whatever with individual element of the array
+        done
+
     fi
 fi
 
@@ -220,9 +222,9 @@ fi
 #############################################################################################
 # Test adversarial samples on the model
 
-TEST_ADVERSARIAL_TRAIN=true
+TEST_ADVERSARIAL_TRAIN=false
 TEST_ADVERSARIAL_TEST=true
-TEST_BENIGN_TEST=true
+TEST_BENIGN_TEST=false
 test_type=adversarial
 if [ "$TEST" = true ]
 then
@@ -234,7 +236,7 @@ then
         --gpu=$gpu \
         --base_dir=$base_dir \
         --root_hash_config=$root_hash_config \
-        --mt_hash_config=$mt_hash_config \
+        --mt_hashepsilon_config=$mt_hash_config \
         --epochs=$epochs \
         --num_eval_epochs=$num_eval_epochs \
         --arch=$model \
@@ -264,53 +266,52 @@ then
         --attack=$attack \
         --c=$c_base \
         --d=$d_base \
-        --weight_repulsion=$weight_repulsion \
-        --scale_factor=$scale_factor \
-        --sparsefilter=$sparseblock
+        --eps=$eps
 
     fi
 
     attack_split='test'
     if [ "$TEST_ADVERSARIAL_TEST" = true ]
     then
-        cd ${home_dir}
-        python3 test.py \
-        --gpu=$gpu \
-        --base_dir=$base_dir \
-        --root_hash_config=$root_hash_config \
-        --mt_hash_config=$mt_hash_config \
-        --epochs=$epochs \
-        --num_eval_epochs=$num_eval_epochs \
-        --arch=$model \
-        --batch_size=$batch_size \
-        --lr=$lr \
-        --weight_decay=$weight_decay \
-        --lr_warmup_epochs=$lr_warmup_epochs \
-        --lr_warmup_decay=$lr_warmup_decay \
-        --label_smoothing=$label_smoothing \
-        --mixup_alpha=$mixup_alpha \
-        --cutmix_alpha=$cutmix_alpha \
-        --random_erasing=$random_erasing \
-        --model_ema=False \
-        --pretrained=$pretrained \
-        --freeze_layers=$freeze_layers \
-        --seed=$seed \
-        --num_classes=$num_classes \
-        --original_dataset=$original_dataset \
-        --original_config=$original_config \
-        --trainer_type=$trainer_type \
-        --new_classifier=$new_classifier \
-        --test_type=$test_type \
-        --attack_split=$attack_split \
-        --detector_type=$detector_type \
-        --total_attack_samples=$total_attack_samples_test \
-        --integrated=$integrated \
-        --attack=$attack \
-        --c=$c_base \
-        --d=$d_base \
-        --weight_repulsion=$weight_repulsion \
-        --scale_factor=$scale_factor \
-        --sparsefilter=$sparseblock
+        for epsilon in "${epsilon_list[@]}"
+        do
+            cd ${home_dir}
+            python3 test.py \
+            --gpu=$gpu \
+            --base_dir=$base_dir \
+            --root_hash_config=$root_hash_config \
+            --mt_hash_config=$mt_hash_config \
+            --epochs=$epochs \
+            --num_eval_epochs=$num_eval_epochs \
+            --arch=$model \
+            --batch_size=$batch_size \
+            --lr=$lr \
+            --weight_decay=$weight_decay \
+            --lr_warmup_epochs=$lr_warmup_epochs \
+            --lr_warmup_decay=$lr_warmup_decay \
+            --label_smoothing=$label_smoothing \
+            --mixup_alpha=$mixup_alpha \
+            --cutmix_alpha=$cutmix_alpha \
+            --random_erasing=$random_erasing \
+            --model_ema=False \
+            --pretrained=$pretrained \
+            --freeze_layers=$freeze_layers \
+            --seed=$seed \
+            --num_classes=$num_classes \
+            --original_dataset=$original_dataset \
+            --original_config=$original_config \
+            --trainer_type=$trainer_type \
+            --new_classifier=$new_classifier \
+            --test_type=$test_type \
+            --attack_split=$attack_split \
+            --detector_type=$detector_type \
+            --total_attack_samples=$total_attack_samples_test \
+            --integrated=$integrated \
+            --attack=$attack \
+            --c=$c_base \
+            --d=$d_base \
+            --eps=$epsilon
+        done
 
     fi
     test_type=benign
@@ -351,9 +352,7 @@ then
         --attack=$attack \
         --c=$c_base \
         --d=$d_base \
-        --weight_repulsion=$weight_repulsion \
-        --scale_factor=$scale_factor \
-        --sparsefilter=$sparseblock
+        --eps=$eps
     fi
 fi
 

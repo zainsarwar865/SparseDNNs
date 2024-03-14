@@ -30,4 +30,4 @@ unset __conda_setup
 conda activate "/home/zsarwar/.conda/envs/cnn"
 
 
-./randCNN_kernel.sh
+./randCNN_old.sh
