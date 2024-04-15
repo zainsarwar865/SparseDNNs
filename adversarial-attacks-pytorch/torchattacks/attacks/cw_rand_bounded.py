@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from ..attack import Attack
+from ..attack_rand import Attack
 
 class CW(Attack):
     r"""
@@ -49,6 +49,7 @@ class CW(Attack):
         Overridden.
         """
         print("C value is : ", self.c)
+        print(f"Eps is {self.eps}")
         images = images.clone().detach().to(self.device)
         #print("Inside forward", images[0])
         labels = labels.clone().detach().to(self.device)
@@ -75,9 +76,6 @@ class CW(Attack):
 
         # For tracking moving average of successes/failures
         batch_size = images.shape[0]
-        condition = torch.randn((batch_size,)) > 0
-        mask = condition
-        binary_success = condition.to(dtype=int)
         cache_size =  50
         success_thres = 0.5
 
@@ -100,7 +98,7 @@ class CW(Attack):
                 f_loss = self.f(outputs, target_labels).sum()
             else:
                 f_loss = self.f(outputs, labels).sum()
-            cost = self.c * f_loss
+            cost = f_loss
             print("L2_loss: ",  L2_loss.item())
             print("f_loss: ",  f_loss.item())
             print("--------------------")
@@ -123,27 +121,30 @@ class CW(Attack):
             # Filter out images that get either correct predictions or non-decreasing loss,
             # i.e., only images that are both misclassified and loss-decreasing are left
             
-            mask = condition * (best_L2 > current_L2.detach())
-            #mask = condition
+            #mask = condition * (best_L2 > current_L2.detach())
+            mask = condition
             flipped_mask = torch.logical_or(mask, flipped_mask)
             best_L2 = mask * current_L2.detach() + (1 - mask) * best_L2
-            
             # Update running average values
             binary_success = mask
             cache_idx = step % cache_size
             moving_results[:, cache_idx] = binary_success
             moving_avg = torch.nanmean(moving_results, dim=1)
             mask_mov_avg = moving_avg > best_moving_avg
-            mask = torch.logical_and(mask_mov_avg, mask).float()
+            mask = torch.logical_and(mask_mov_avg, mask)
+            best_moving_avg[mask] = moving_avg[mask]
+            mask = mask.float()
             mask = mask.view([-1] + [1] * (dim - 1))
             best_adv_images = mask * adv_images.detach() + (1 - mask) * best_adv_images
+
 
 
         # Only return successful adversarial samples
         flipped_indices = torch.where(flipped_mask == True)[0]
         flipped_indices = flipped_indices.detach().cpu()
         best_adv_images = best_adv_images.detach().cpu()
-        return best_adv_images, images.cpu(), flipped_indices
+        best_moving_avg = best_moving_avg.detach().cpu()
+        return best_adv_images, images.cpu(), flipped_indices, best_moving_avg
 
     def tanh_space(self, x):
         return 1 / 2 * (torch.tanh(x) + 1)
@@ -167,4 +168,4 @@ class CW(Attack):
         if self.targeted:
             return torch.clamp((other - real), min=-self.kappa)
         else:
-            return torch.clamp((real - other), min=-self.kappa)
+            return torch.clamp((real - other), min=-self.kappa) 

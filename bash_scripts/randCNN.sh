@@ -1,7 +1,7 @@
 CREATE_ROOT=false
 TRAIN_MT_BASELINE=false
 RUN_ATTACK=true
-TEST=true
+TEST=false
 FEATURE_EXTRACTION_BENIGN=false
 FEATURE_EXTRACTION_ADVERSARIAL=false
 TRAIN_MLP=false
@@ -24,26 +24,15 @@ detector_type="Regular" # Regular
 scale_factor=2
 weight_repulsion="True"
 
-c_base=0.3
+c_base=1.0
 d_base=0
-#epsilon_list=(0.002 0.004 0.006 0.008 0.01 0.012 0.014 0.016 0.018 0.02 0.022 0.024 0.026 0.028 0.03 0.032 0.034 0.036 0.038 0.04)
-#epsilon_list=(0.042 0.044 0.046 0.048 0.05  0.052 0.054)
-#epsilon_list=(0.056 0.058 0.060 0.062 0.064  0.066 0.068)
-epsilon_list=(0.026 0.028 0.03 0.032 0.034 0.036 0.038 0.04) # Remaining
-#epsilon_list=(0.002 0.004 0.006 0.008 0.01 0.012 0.014 0.016 0.018 0.02 0.022 0.024 )
-#epsilon_list=(0.024)
+#epsilon_list=(0.002 0.004 0.006 0.008 0.01 0.012 0.014 0.016 0.018 0.02 0.022 0.024 0.026 0.028 0.03 0.032)
+#epsilon_list=(0.002 0.004 0.006 0.008 0.01 0.012 0.014 0.016)
+epsilon_list=(0.0002 0.0004 0.0006 0.0008 0.001  0.0012 0.0014 0.0016 0.0018)
+
 
 # Setup the directory for an experiment
-#############################################################################################
-
-# MT Root parameters
-base_dir='/net/scratch/zsarwar/SparseDNNs'
-mt_dataset="cifar10"
-mt_config="randCNN"
-mt_classes=10
-# root_config --> subset
-# Hash configs
-root_hash_config="MT_${mt_dataset}_${mt_config}_${mt_classes}"
+################################Sparsiet}_${mt_config}_${mt_classes}"
 if [ "$CREATE_ROOT" = true ]
 then
     cd ${home_dir}
@@ -78,7 +67,7 @@ mixup_alpha=0.2
 cutmix_alpha=0.2
 random_erasing=0.1
 model_ema=False
-epochs=2502
+epochs=2503
 num_eval_epochs=1
 resume=True
 pretrained=False
@@ -145,11 +134,11 @@ RUN_ATTACK_TEST=true
 
 # Attack parameters
 original_dataset=cifar10
-steps=1500
+steps=3000
 lr=0.01
 batch_size=512
-total_attack_samples_train=2560
-total_attack_samples_test=2560
+total_attack_samples_train=1500
+total_attack_samples_test=1500
 attack_split='train'
 integrated=False
 
@@ -160,7 +149,7 @@ then
     if [ "$RUN_ATTACK_TRAIN" = true ]
     then
         cd ${home_dir}
-        python3 attack_bounded.py \
+        python3 attack_bounded_randCNN.py \
         --gpu=$gpu \
         --base_dir=$base_dir \
         --root_hash_config=$root_hash_config \
@@ -195,7 +184,7 @@ then
         for epsilon in "${epsilon_list[@]}"
         do
             cd ${home_dir}
-            python3 attack_bounded.py \
+            python3 attack_bounded_randCNN.py \
             --gpu=$gpu \
             --base_dir=$base_dir \
             --root_hash_config=$root_hash_config \

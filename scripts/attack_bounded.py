@@ -112,7 +112,7 @@ import torch.backends.cudnn as cudnn
 from utils.wide_resnet import WideResNet
 import yaml
 from typing import Any, Union, Type
-from utils.MLP import MLP
+from utils.MLP import MLP, MLP_EXP
 
 if args.integrated:
     if args.detector_type == 'Quantized':
@@ -132,7 +132,6 @@ if args.sparsefilter == 'SparsifyFiltersLayer':
 elif args.sparsefilter == 'SparsifyKernelGroups':
     from utils.resnet_rand import resnet18
     sparseblock = SparsifyKernelGroups
-    from torchattacks.attacks.cw_rand_bounded import CW
 elif args.sparsefilter == "None":
     print("Testing regular ResNEt")
     from utils.resnet import resnet18
@@ -228,7 +227,7 @@ elif args.model == 'resnet18':
     model.fc = nn.Linear(in_features=512, out_features=args.num_classes, bias=True)
 
 elif args.model == 'MLP':
-    model = MLP()
+    model = MLP_EXP()
 
 
 checkpoint = torch.load(ckpt_path, map_location=loc)

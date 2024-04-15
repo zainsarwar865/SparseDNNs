@@ -98,7 +98,7 @@ import utils.utils as utils
 import utils.configs as configs
 from utils.wide_resnet import WideResNet
 
-from utils.MLP import MLP
+from utils.MLP import MLP, MLP_EXP
 #from torchvision.models.feature_extraction import create_feature_extractor
 from typing import Type, Union, Any
 
@@ -289,7 +289,7 @@ def main_worker(gpu, ngpus_per_node, args):
             else:
                 model = resnet18(sparsefilter=sparseblock,scale_factor=args.scale_factor)
         elif args.arch == 'MLP':
-            model = MLP()
+            model = MLP_EXP()
         #elif args.arch == 'resnet50':
             #model = models.__dict__[args.arch](weights=ResNet50_Weights.IMAGENET1K_V2)
         if args.new_classifier:
@@ -311,7 +311,7 @@ def main_worker(gpu, ngpus_per_node, args):
                 model = resnet18(sparsefilter=sparseblock,scale_factor=args.scale_factor)
 
         if args.arch == "MLP":
-            model = MLP()
+            model = MLP_EXP()
         
         if args.new_classifier:
             if args.arch == 'resnet50':

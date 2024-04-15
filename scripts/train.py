@@ -607,7 +607,7 @@ def train(train_loader, model, criterion, optimizer, epoch, device, args):
         target = target.to(device, non_blocking=True)
 
         # compute output
-        output, _ = model(images)
+        output = model(images)
         loss = criterion(output, target)
 
         if args.weight_repulsion:
@@ -620,13 +620,13 @@ def train(train_loader, model, criterion, optimizer, epoch, device, args):
                     step_size = (l2_distances.shape[1] // (args.scale_factor)) + 1
                     extract_indices = torch.arange(0, l2_blocks.shape[0], step=step_size)
                     repulsion_loss = -l2_blocks[extract_indices].sum()
-                    tot_repulsion_loss+=(repulsion_loss * idx * 2) # Og 8    
+                    tot_repulsion_loss+=(repulsion_loss  * 3) # Og 8    
         
             # This cannot be a fixed hyperparameter
             tot_repulsion_loss_c = -tot_repulsion_loss.clone().detach()
             #print("Original tot_repulsion_loss_c", tot_repulsion_loss_c)
             lam = 1
-            while tot_repulsion_loss_c > (loss): # og 3
+            while tot_repulsion_loss_c > (loss*3): # og 3
                 tot_repulsion_loss_c = tot_repulsion_loss_c / 2
                 lam*=1/2
 
@@ -680,7 +680,7 @@ def validate(val_loader, model, criterion, args):
                     target = target.cuda(args.gpu, non_blocking=True)
 
                 # compute output
-                output, _ = model(images)
+                output = model(images)
                 loss = criterion(output, target)
 
                 # measure accuracy and record loss

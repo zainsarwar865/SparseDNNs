@@ -101,7 +101,7 @@ from utils.resnet_rand import resnet18, SparsifyFiltersLayer, SparsifyKernelGrou
 #from torchvision.models.feature_extraction import create_feature_extractor
 from typing import Type, Union, Any
 
-from utils.MLP import MLP
+from utils.MLP import MLP, MLP_EXP
 
 model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
@@ -274,7 +274,7 @@ def main_worker(gpu, ngpus_per_node, args):
             #model = models.__dict__[args.arch](weights=ResNet18_Weights.IMAGENET1K_V2)
             model = resnet18(sparsefilter=sparseblock,scale_factor=args.scale_factor)
         elif args.arch == "MLP":
-            model = MLP()
+            model = MLP_EXP()
         #elif args.arch == 'resnet50':
             #model = models.__dict__[args.arch](weights=ResNet50_Weights.IMAGENET1K_V2)
         if args.new_classifier:
@@ -292,7 +292,7 @@ def main_worker(gpu, ngpus_per_node, args):
             if args.arch == 'resnet18':
                 model = resnet18(sparsefilter=sparseblock,scale_factor=args.scale_factor)
             elif args.arch == "MLP":
-                model = MLP()
+                model = MLP_EXP()
     
         if args.new_classifier:
             if args.arch == 'resnet50':

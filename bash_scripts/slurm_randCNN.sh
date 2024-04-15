@@ -4,11 +4,11 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=2GB
-#SBATCH --time=03:55:00
+#SBATCH --time=03:00:00
 #SBATCH --output=/home/zsarwar/slurm/out/p%j.%N.stdout
 #SBATCH --error=/home/zsarwar/slurm/out/%j.%N.stderr
 #SBATCH --job-name=kernelCNN
-#SBATCH --gres=gpu:rtx2080ti:1
+#SBATCH --gres=gpu:a30:1
 
 
 # >>> conda initialize >>>
@@ -25,7 +25,6 @@ else
 fi
 unset __conda_setup
 # <<< conda initialize <<<
-
 
 conda activate "/home/zsarwar/.conda/envs/cnn"
 

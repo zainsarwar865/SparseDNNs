@@ -24,7 +24,7 @@ detector_type="Regular" # Regular
 scale_factor=2
 weight_repulsion="True"
 
-c_base=0.3
+c_base=1.0
 d_base=0
 eps=0.025
 

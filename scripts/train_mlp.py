@@ -93,7 +93,7 @@ from utils.resnet_rand import SparsifyFiltersLayer, SparsifyKernelGroups
 import signal
 import sys
 
-from utils.MLP import MLP
+from utils.MLP import MLP, MLP_EXP
 
 def timeout_handler(signum, frame):
     print("Script completed after x seconds.")
@@ -324,7 +324,7 @@ def main_worker(gpu, ngpus_per_node, args):
             if args.arch == 'resnet18':
                model.fc = nn.Linear(in_features=512, out_features=args.num_classes, bias=True)
         if args.arch == 'MLP':
-            model = MLP()
+            model = MLP_EXP()
     else:
         logger.critical(f"=> creating model {args.arch}")
         if args.arch == 'resnet18':
@@ -333,7 +333,7 @@ def main_worker(gpu, ngpus_per_node, args):
             if args.arch == 'resnet18':
                 model.fc = nn.Linear(in_features=512, out_features=args.num_classes, bias=True)
         if args.arch == 'MLP':
-            model = MLP()
+            model = MLP_EXP()
     # Add option to freeze/unfreeze more layers
     # TODO
     if args.freeze_layers:

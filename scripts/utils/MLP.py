@@ -4,47 +4,48 @@ import torch.nn.init as init
 
 torch.manual_seed(42)
 
-
-
-
-
 class MLP_EXP(nn.Module):
     def __init__(self):
         super().__init__()
-        self.l1 = nn.Linear(3072, 4608)
-        init.kaiming_normal_(self.l1.weight)
-        self.hidden = nn.Sequential(
+        self.hidden = nn.Sequential(nn.Linear(3072, 4608),
+                                    nn.BatchNorm1d(4608),
                                     nn.Linear(4608, 4608),
+                                    nn.BatchNorm1d(4608),
                                     nn.ReLU(),
-                                    nn.BatchNorm2d(4608),
                                     nn.Linear(4608, 4608),
+                                    nn.BatchNorm1d(4608),
                                     nn.ReLU(),
-                                    nn.BatchNorm2d(4608),
                                     nn.Linear(4608, 4608),
+                                    nn.BatchNorm1d(4608),
                                     nn.ReLU(),
-                                    nn.BatchNorm2d(4608),
                                     nn.Linear(4608, 4608),
+                                    nn.BatchNorm1d(4608),
                                     nn.ReLU(),
-                                    nn.BatchNorm2d(4608),
                                     nn.Linear(4608, 4608),
+                                    nn.BatchNorm1d(4608),
                                     nn.ReLU(),
-                                    nn.BatchNorm2d(4608),
+                                    nn.Linear(4608, 4608),
+                                    nn.BatchNorm1d(4608),
+                                    nn.ReLU(),
+                                    nn.Linear(4608, 4608),
+                                    nn.BatchNorm1d(4608),
+                                    nn.ReLU(),
+                                    nn.Linear(4608, 4608),
+                                    nn.BatchNorm1d(4608),
+                                    nn.ReLU(),
+                                    nn.Linear(4608, 4608),
+                                    nn.BatchNorm1d(4608),
+                                    nn.ReLU(),
                                     nn.Linear(4608, 1536),
+                                    nn.BatchNorm1d(1536),
                                     nn.ReLU(),
-
-
+                                    nn.Linear(1536,10)
                                     )
         self.apply(self._init_weights)
-        self.l2 = nn.Linear(1536,10)
-        init.kaiming_normal_(self.l2.weight)
-        self.ReLU = nn.ReLU()
-    
+        self.ReLU = nn.ReLU()    
     def forward(self, x):
         x = x.flatten(1)
-        x = self.l1(x)
-        x = self.ReLU(x)
         x = self.hidden(x)
-        x = self.l2(x)
         return x
     
 

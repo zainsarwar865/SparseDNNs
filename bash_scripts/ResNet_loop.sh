@@ -24,7 +24,7 @@ detector_type="Regular" # Regular
 scale_factor=2
 weight_repulsion="True"
 
-c_base=0.3
+c_base=1.0
 d_base=0
 eps=0.025
 epsilon_list=(0.002 0.004 0.006 0.008 0.01 0.012 0.014 0.016 0.018 0.02 0.022 0.024 0.026 0.028 0.03 0.032 0.034 0.036 0.038 0.04)
