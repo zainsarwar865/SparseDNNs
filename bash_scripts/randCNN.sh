@@ -1,7 +1,7 @@
 CREATE_ROOT=false
 TRAIN_MT_BASELINE=false
 RUN_ATTACK=true
-TEST=false
+TEST=true
 FEATURE_EXTRACTION_BENIGN=false
 FEATURE_EXTRACTION_ADVERSARIAL=false
 TRAIN_MLP=false
@@ -27,12 +27,19 @@ weight_repulsion="True"
 c_base=1.0
 d_base=0
 #epsilon_list=(0.002 0.004 0.006 0.008 0.01 0.012 0.014 0.016 0.018 0.02 0.022 0.024 0.026 0.028 0.03 0.032)
-#epsilon_list=(0.002 0.004 0.006 0.008 0.01 0.012 0.014 0.016)
-epsilon_list=(0.0002 0.0004 0.0006 0.0008 0.001  0.0012 0.0014 0.0016 0.0018)
-
-
+#epsilon_list=(0.0002 0.0004 0.0006 0.0008 0.001 0.0012 0.0014 0.0016 0.0018)
+epsilon_list=(0.000000000000000000000000000002)
 # Setup the directory for an experiment
-################################Sparsiet}_${mt_config}_${mt_classes}"
+#############################################################################################
+
+# MT Root parameters
+base_dir='/net/scratch/zsarwar/SparseDNNs'
+mt_dataset="cifar10"
+mt_config="randCNN"
+mt_classes=10
+# root_config --> subset
+# Hash configs
+root_hash_config="MT_${mt_dataset}_${mt_config}_${mt_classes}"
 if [ "$CREATE_ROOT" = true ]
 then
     cd ${home_dir}
@@ -134,7 +141,7 @@ RUN_ATTACK_TEST=true
 
 # Attack parameters
 original_dataset=cifar10
-steps=3000
+steps=500
 lr=0.01
 batch_size=512
 total_attack_samples_train=1500
