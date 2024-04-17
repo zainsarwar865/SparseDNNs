@@ -50,6 +50,18 @@ signal.signal(signal.SIGALRM, timeout_handler)
 # Set the alarm to trigger after x_seconds
 signal.alarm(x_seconds)
 
+
+def run_validate_iter(model, loader, iters=100):
+    all_masks = None
+    for i in range(iters):
+        t_mask = run_validate(model, loader)
+        if isinstance(all_masks, torch.Tensor):
+            all_masks = torch.logical_and(all_masks, t_mask)
+        else:
+            all_masks = t_mask
+    return all_masks
+
+
 def run_validate(model, loader, base_progress=0):
     all_masks = None
     with torch.no_grad():
@@ -149,8 +161,6 @@ np.random.seed(args.seed)
 
 
 
-
-
 print("Starting attack...")
 
 
@@ -240,8 +250,15 @@ model = model.to(device)
 # Filter out incorrectly classified samples
 model = model.eval()
 
-mask = run_validate(model,dataloader)
+mask = run_validate_iter(model, dataloader)
+
+
 good_indices = torch.where(mask == True)[1].tolist()
+
+
+
+print("Len of good indices : ", len(good_indices))
+
 # Create new subsets
 if args.attack_split == "train":
     trainset = Subset(trainset, indices=good_indices)

@@ -76,8 +76,9 @@ class CW(Attack):
 
         # For tracking moving average of successes/failures
         batch_size = images.shape[0]
-        cache_size =  50
+        cache_size =  100
         success_thres = 0.5
+        success_thresh_mask = torch.zeros(size=(batch_size,), dtype=torch.bool).to(device=self.device)
 
         moving_results = torch.zeros(size=(batch_size, cache_size)).to(device=self.device)
         moving_results[:] = torch.nan
@@ -123,7 +124,7 @@ class CW(Attack):
             
             #mask = condition * (best_L2 > current_L2.detach())
             mask = condition
-            flipped_mask = torch.logical_or(mask, flipped_mask)
+            #flipped_mask = torch.logical_or(mask, flipped_mask)
             best_L2 = mask * current_L2.detach() + (1 - mask) * best_L2
             # Update running average values
             binary_success = mask
@@ -131,16 +132,20 @@ class CW(Attack):
             moving_results[:, cache_idx] = binary_success
             moving_avg = torch.nanmean(moving_results, dim=1)
             mask_mov_avg = moving_avg > best_moving_avg
+            curr_success_mask = moving_avg > success_thres
+            curr_success_mask = torch.logical_and(curr_success_mask, mask)
+            success_thresh_mask[curr_success_mask] = True
             mask = torch.logical_and(mask_mov_avg, mask)
             best_moving_avg[mask] = moving_avg[mask]
             mask = mask.float()
             mask = mask.view([-1] + [1] * (dim - 1))
-            best_adv_images = mask * adv_images.detach() + (1 - mask) * best_adv_images
-
-
+            unsucc_mask = (~success_thresh_mask).float()
+            unsucc_mask = unsucc_mask.view([-1] + [1] * (dim - 1))
+            best_adv_images = unsucc_mask * mask * adv_images.detach() + (1 - mask) * best_adv_images
+            #best_adv_images = mask * adv_images.detach() + (1 - mask) * best_adv_images
 
         # Only return successful adversarial samples
-        flipped_indices = torch.where(flipped_mask == True)[0]
+        flipped_indices = torch.where(success_thresh_mask == True)[0]
         flipped_indices = flipped_indices.detach().cpu()
         best_adv_images = best_adv_images.detach().cpu()
         best_moving_avg = best_moving_avg.detach().cpu()
