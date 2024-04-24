@@ -1,6 +1,6 @@
 CREATE_ROOT=false
 TRAIN_MT_BASELINE=false
-RUN_ATTACK=true
+RUN_ATTACK=false
 TEST=true
 FEATURE_EXTRACTION_BENIGN=false
 FEATURE_EXTRACTION_ADVERSARIAL=false
@@ -26,9 +26,15 @@ weight_repulsion="True"
 
 c_base=1.0
 d_base=0
-#epsilon_list=(0.002 0.004 0.006 0.008 0.01 0.012 0.014 0.016 0.018 0.02 0.022 0.024 0.026 0.028 0.03 0.032)
-#epsilon_list=(0.0002 0.0004 0.0006 0.0008 0.001 0.0012 0.0014 0.0016 0.0018)
-epsilon_list=(0.000000000000000000000000000002)
+#epsilon_list=(0.01 0.012 0.014 0.016 0.018 0.02)
+#0.01 0.012 0.014 0.016 0.018 0.02 0.022 0.024 0.026 0.028 0.03 0.032
+#epsilon_list=(0.0002 0.0004 0.0006 0.0008 0.001 0.0012 0.0014 0.0016 0.0018 0.01 0.012 0.014 0.016 0.018 0.02  )
+#epsilon_list=(0.02 0.022 0.024 0.026 0.028)
+#epsilon_list=(0.03 0.032 0.034 0.036 0.038 0.04)
+#epsilon_list=(0.034 0.036 0.038 0.04)
+epsilon_list=(0.034)
+
+#epsilon_list=(0.0)
 # Setup the directory for an experiment
 #############################################################################################
 
@@ -141,11 +147,11 @@ RUN_ATTACK_TEST=true
 
 # Attack parameters
 original_dataset=cifar10
-steps=500
+steps=2000
 lr=0.01
 batch_size=512
 total_attack_samples_train=1500
-total_attack_samples_test=1500
+total_attack_samples_test=2500
 attack_split='train'
 integrated=False
 

@@ -36,13 +36,42 @@ __all__ = [
 ]
 
 
+# Vertically sharded kernels
+class ShardedKernels(nn.Module):
+    def __init__(self, num_quadrants):
+        super().__init__()
+        self.num_quadrants = num_quadrants
+
+    def generate_quad_coords(self, kernel_size):
+        step_size = max(1, kernel_size // 2)
+        cords_list = []
+        for r_start in range(0, kernel_size, step_size):
+            for c_start in range(0, kernel_size, step_size):
+                cords_list.append(((r_start, r_start + step_size), (c_start, c_start + step_size)))
+        return cords_list
+    
+    def forward(self, conv_filters):       
+        conv_filters_filtered = torch.ones(size=(conv_filters.shape[0], conv_filters.shape[1] // self.num_quadrants, conv_filters.shape[2], conv_filters.shape[3])).to(device=conv_filters.device)
+        quad_cords = self.generate_quad_coords(conv_filters.shape[-1])
+        kernel_depth_step = conv_filters.shape[1] // self.num_quadrants
+        k_depth_idx = 0
+        for r_cords, c_cords in quad_cords:
+            conv_filters_filtered[:, :, r_cords[0]:r_cords[1], c_cords[0]:c_cords[1]] = conv_filters[:, k_depth_idx:k_depth_idx + kernel_depth_step, r_cords[0]:r_cords[1], c_cords[0]:c_cords[1]]
+            k_depth_idx+= kernel_depth_step
+        
+        conv_filters = conv_filters_filtered
+        return conv_filters
+
+
+
 # Random Kernel groups
 class SparsifyKernelGroups(nn.Module):
     def __init__(self, div_factor):
         super().__init__()
         self.div_factor = div_factor
         
-    def forward(self, conv_filters):
+    def forward(self, conv_filters):            
+
         group_indices = torch.randint(size=(conv_filters.shape[0], conv_filters.shape[1] // self.div_factor, conv_filters.shape[2],
                                              conv_filters.shape[3]), high = self.div_factor, low=0)
         offset_indices = torch.arange(start=0, end =conv_filters.shape[1], step=self.div_factor )
@@ -101,7 +130,7 @@ class BasicBlock(nn.Module):
         dilation: int = 1,
         norm_layer: Optional[Callable[..., nn.Module]] = None,
         scale_factor: int = 2,
-        sparsefilter : Type[Union[SparsifyFiltersLayer, SparsifyKernelGroups]] = SparsifyKernelGroups,   
+        sparsefilter : Type[Union[SparsifyFiltersLayer, SparsifyKernelGroups, ShardedKernels]] = SparsifyKernelGroups,   
     ) -> None:
         super().__init__()
         if norm_layer is None:
@@ -214,7 +243,7 @@ class ResNet(nn.Module):
         replace_stride_with_dilation: Optional[List[bool]] = None,
         norm_layer: Optional[Callable[..., nn.Module]] = None,
         scale_factor: int = 2,
-        sparsefilter : Type[Union[SparsifyFiltersLayer, SparsifyKernelGroups]] = SparsifyKernelGroups,
+        sparsefilter : Type[Union[SparsifyFiltersLayer, SparsifyKernelGroups, ShardedKernels]] = SparsifyKernelGroups,
 
     ) -> None:
         super().__init__()
@@ -274,7 +303,7 @@ class ResNet(nn.Module):
         blocks: int,
         stride: int = 1,
         dilate: bool = False,
-        sparsefilter : Type[Union[SparsifyFiltersLayer, SparsifyKernelGroups]] = SparsifyKernelGroups,
+        sparsefilter : Type[Union[SparsifyFiltersLayer, SparsifyKernelGroups, ShardedKernels]] = SparsifyKernelGroups,
         ) -> nn.Sequential:
         norm_layer = self._norm_layer
         downsample = None

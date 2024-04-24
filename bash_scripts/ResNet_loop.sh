@@ -97,7 +97,7 @@ mt_hash_config="${trainer_type}_${original_dataset}_${original_config}_${model}_
 if [ "$TRAIN_MT_BASELINE" = true ]
 then
     cd ${home_dir}
-    python3 train_resnet.py \
+    python3 train.py \
     --gpu=$gpu \
     --base_dir=$base_dir \
     --root_hash_config=$root_hash_config \

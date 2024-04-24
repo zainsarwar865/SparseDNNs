@@ -6,28 +6,25 @@ parser.add_argument('--root_hash_config', type=str)
 parser.add_argument('--base_dir')
 parser.add_argument('--mt_hash_config', type=str)
 parser.add_argument('--arch', metavar='ARCH',)
-parser.add_argument('--num_eval_epochs', type=int)
+parser.add_argument('--num_eval_epochs', type=int, default=1)
 parser.add_argument('--workers', default=2, type=int)
 parser.add_argument('--epochs', type=int)
 parser.add_argument('--start_epoch', type=int, default=0)
 parser.add_argument('--batch_size', type=int)
 parser.add_argument('--lr', dest='lr', type=float)
-parser.add_argument('--lr_warmup_epochs', type=int)
-parser.add_argument('--lr_warmup_decay',  type=float)
+parser.add_argument('--lr_warmup_epochs', type=int, default=2)
+parser.add_argument('--lr_warmup_decay',  type=float, default=0.01)
 parser.add_argument('--lr_min', default=0.0, type=float)
-parser.add_argument('--label_smoothing', type=float)
-parser.add_argument("--mixup_alpha",  type=float)
-parser.add_argument("--cutmix_alpha", type=float)
+parser.add_argument('--label_smoothing', type=float, default=0.1)
+parser.add_argument("--mixup_alpha",  type=float, default=0.2)
+parser.add_argument("--cutmix_alpha", type=float, default=0.2)
 parser.add_argument("--auto_augment_policy", default='ta_wide', type=str)
-parser.add_argument("--random_erasing", type=float)
+parser.add_argument("--random_erasing", type=float, default=0.1)
 parser.add_argument("--use_v2", default=False, type=bool)
-parser.add_argument("--model_ema", type=bool)
-parser.add_argument("--model_ema_steps",type=int,default=32)
-parser.add_argument("--model_ema_decay",type=float, default=0.99998)
 parser.add_argument('--momentum', default=0.9, type=float, metavar='M')
-parser.add_argument('--weight_decay',  type=float)
+parser.add_argument('--weight_decay',  type=float, default=0.0001)
 parser.add_argument('--print_freq', default=300, type=int)
-parser.add_argument('--test', type=str)
+parser.add_argument('--resume', type=str)
 parser.add_argument('--evaluate', dest='evaluate', default=False)
 parser.add_argument('--pretrained',type=str)
 parser.add_argument('--gpu', type=int)
@@ -48,16 +45,15 @@ parser.add_argument('--total_attack_samples', type=int)
 parser.add_argument('--c', type=float)
 parser.add_argument('--d', type=float)
 parser.add_argument('--eps', type=float)
-parser.add_argument('--weight_repulsion', type=str)
-parser.add_argument('--scale_factor', type=int),
-parser.add_argument('--sparsefilter', type=str)
+parser.add_argument('--weight_repulsion', type=str, default=None)
+parser.add_argument('--scale_factor', type=int, default=None),
+parser.add_argument('--sparsefilter', type=str, default=None),
+parser.add_argument('--gaussian_dev', type=float, default=None),
 
 args = parser.parse_args()
+os.environ['CUDA_VISIBLE_DEVICES']=str(args.gpu)
+args.gpu = 0
 
-
-
-os.environ['CUDA_VISIBLE_DEVICES'] = str(args.gpu)
-args.gpu=0
 device="cuda:0"
 
 import random
@@ -83,7 +79,6 @@ import torch.utils.data.distributed
 import torchvision.datasets as datasets
 import torchvision
 import torchvision.models as models
-#from torchvision.models import resnet50, ResNet50_Weights, ResNet18_Weights
 import torchvision.transforms as transforms
 from torch.optim.lr_scheduler import StepLR, CosineAnnealingLR, LinearLR, SequentialLR
 from torch.utils.data import Subset
@@ -96,12 +91,26 @@ from utils.transforms import get_mixup_cutmix
 from torch.utils.data.dataloader import default_collate
 import utils.utils as utils
 import utils.configs as configs
-from utils.wide_resnet import WideResNet
-
-from utils.MLP import MLP, MLP_EXP
-#from torchvision.models.feature_extraction import create_feature_extractor
+from utils.MLP import MLP_EXP
 from typing import Type, Union, Any
+import signal
+import sys
+from utils.resnet_rand import SparsifyFiltersLayer, SparsifyKernelGroups, ShardedKernels
 
+
+def timeout_handler(signum, frame):
+    print("Script completed after x seconds.")
+    sys.exit(0)
+
+
+x_seconds = 13500
+
+
+# Set the signal handler
+signal.signal(signal.SIGALRM, timeout_handler)
+
+# Set the alarm to trigger after x_seconds
+signal.alarm(x_seconds) 
 model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
     and callable(models.__dict__[name]))
@@ -110,20 +119,24 @@ model_names = sorted(name for name in models.__dict__
 
 
 
+if args.arch in  ['resnet18_randCNN', 'resnet18_sharded']:
+    from utils.resnet_rand import resnet18
+elif args.arch == 'resnet18':
+    from utils.resnet import resnet18
+elif args.arch == 'resnet18_Gaussian':
+    from utils.resnet_gaussian import resnet18
+
+
+
+# Select sparseblock here
+sparseblock : Type[Union[SparsifyFiltersLayer, SparsifyKernelGroups, ShardedKernels]]
+
 if args.sparsefilter == 'SparsifyFiltersLayer':
     sparseblock = SparsifyFiltersLayer
-    from utils.resnet_rand import resnet18, SparsifyFiltersLayer, SparsifyKernelGroups
 elif args.sparsefilter == 'SparsifyKernelGroups':
-    from utils.resnet_rand import resnet18, SparsifyFiltersLayer, SparsifyKernelGroups
     sparseblock = SparsifyKernelGroups
-elif args.sparsefilter == "None":
-    print("Testing regular ResNEt")
-    from utils.resnet import resnet18
-
-
-
-
-
+elif args.sparsefilter == 'ShardedKernels':
+    sparseblock = ShardedKernels
 
 
 def filter_samples(model, loader, base_progress=0):
@@ -196,8 +209,6 @@ expr_name = args.trainer_type + "_" + expr_hash.hexdigest()
 expr_dir = os.path.join(mt_root_directory, expr_name)
 
 
-if not os.path.exists(expr_dir):
-    os.makedirs(expr_dir)
 
 # Make checkpoints and metrics directory
 ckpt_folder = "Checkpoints"
@@ -207,12 +218,6 @@ metrics_dir = os.path.join(expr_dir, metrics_folder)
 relu_folder = "ReLUs"
 relu_dir = os.path.join(expr_dir, relu_folder)
 
-if not os.path.exists(relu_dir):
-    os.makedirs(relu_dir)
-if not os.path.exists(ckpt_dir):
-    os.makedirs(ckpt_dir)
-if not os.path.exists(metrics_dir):
-    os.makedirs(metrics_dir)
 
 
 # Create log files
@@ -243,17 +248,12 @@ print("Testing model...")
 
 def main():
     if args.seed is not None:
-        #random.seed(args.seed)
-        #torch.manual_seed(args.seed)
-        #cudnn.deterministic = True
-        #cudnn.benchmark = False
-        #np.random.seed(args.seed)
-
-        random.seed(13)
-        torch.manual_seed(13)
+        random.seed(args.seed)
+        torch.manual_seed(args.seed)
         cudnn.deterministic = True
         cudnn.benchmark = False
-        np.random.seed(13)
+        np.random.seed(args.seed)
+
 
 
     args.distributed = args.multiprocessing_distributed
@@ -276,48 +276,32 @@ def main_worker(gpu, ngpus_per_node, args):
     if args.gpu is not None:
         logger.critical(f"Use GPU: {args.gpu} for training")
 
+
+
     # create model
     if args.pretrained:
-        logger.critical(f"=> using pre-trained model {args.arch}")
-        if args.arch == 'wideresnet':
-            # Load model
-            model = WideResNet()
-        elif args.arch == 'resnet18':
-            #model = models.__dict__[args.arch](weights=ResNet18_Weights.IMAGENET1K_V2)
-            if args.sparsefilter == "None":
-                model = resnet18()
-            else:
-                model = resnet18(sparsefilter=sparseblock,scale_factor=args.scale_factor)
-        elif args.arch == 'MLP':
-            model = MLP_EXP()
-        #elif args.arch == 'resnet50':
-            #model = models.__dict__[args.arch](weights=ResNet50_Weights.IMAGENET1K_V2)
+        logger.critical(f"=> using pre-trained model {args.arch}")        
+        if args.arch in  ['resnet18_randCNN', 'resnet18_sharded']:
+            model = resnet18(sparsefilter=sparseblock,scale_factor=args.scale_factor)
+        elif args.arch in ['resnet18_randCNN', 'resnet18']:
+            model = resnet18()
         if args.new_classifier:
-            if args.arch == 'resnet50':
-               model.fc = nn.Linear(in_features=2048, out_features=args.num_classes, bias=True)
-            if args.arch == 'resnet18':
+            if args.arch in ['resnet18_randCNN', 'resnet18_Gaussian', 'resnet18']:  
                model.fc = nn.Linear(in_features=512, out_features=args.num_classes, bias=True)
-
+        if 'MLP' in args.arch:
+            model = MLP_EXP(args.scale_factor)
     else:
         logger.critical(f"=> creating model {args.arch}")
-        if args.arch == 'wideresnet':
-            model = WideResNet()
-        
-            #model = models.__dict__[args.arch]()
-        if args.arch == 'resnet18':
-            if args.sparsefilter == "None":
-                model = resnet18()
-            else:
-                model = resnet18(sparsefilter=sparseblock,scale_factor=args.scale_factor)
-
-        if args.arch == "MLP":
-            model = MLP_EXP()
-        
+        if args.arch in  ['resnet18_randCNN', 'resnet18_sharded']:
+            model = resnet18(sparsefilter=sparseblock, scale_factor=args.scale_factor)
+        elif args.arch in ['resnet18_Gaussian', 'resnet18']:
+            model = resnet18()
         if args.new_classifier:
-            if args.arch == 'resnet50':
-                model.fc = nn.Linear(in_features=2048, out_features=args.num_classes, bias=True)
-            if args.arch == 'resnet18':
+            if args.arch in ['resnet18_randCNN', 'resnet18_Gaussian', 'resnet18', 'resnet18_sharded']:
                 model.fc = nn.Linear(in_features=512, out_features=args.num_classes, bias=True)
+        if 'MLP' in args.arch:
+            model = MLP_EXP(args.scale_factor)
+
 
         
     # Test after training
@@ -340,16 +324,6 @@ def main_worker(gpu, ngpus_per_node, args):
 
 
 
-    
-    
-    # Add option to freeze/unfreeze more layers
-    # TODO
-    if args.freeze_layers:
-        for param in model.parameters():
-            param.requires_grad = False
-        if args.arch == 'resnet18':
-            model.fc.weight.requires_grad = True
-            model.fc.bias.requires_grad = True
 
     if not torch.cuda.is_available() and not torch.backends.mps.is_available():
         logger.critical('using CPU, this will be slow')

@@ -10,7 +10,6 @@
 #SBATCH --job-name=kernelCNN
 #SBATCH --gres=gpu:rtx2080ti:1
 
-
 # >>> conda initialize >>>
 # !! Contents within this block are managed by 'conda init' !!
 __conda_setup="$('/opt/conda/bin/conda' 'shell.bash' 'hook' 2> /dev/null)"
