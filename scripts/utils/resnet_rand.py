@@ -267,7 +267,7 @@ class ResNet(nn.Module):
         self.scale_factor = scale_factor    
         self.groups = groups
         self.base_width = width_per_group
-        self.conv1 = nn.Conv2d(3, self.inplanes, kernel_size=7, stride=2, padding=3, bias=False)
+        self.conv1 = nn.Conv2d(3, self.inplanes*self.scale_factor, kernel_size=7, stride=2, padding=3, bias=False)
         self.bn1 = norm_layer(self.inplanes)
         self.relu = nn.ReLU(inplace=True)
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
@@ -277,6 +277,7 @@ class ResNet(nn.Module):
         self.layer4 = self._make_layer(block, 512, layers[3], stride=2, dilate=replace_stride_with_dilation[2],sparsefilter=sparsefilter)
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.fc = nn.Linear(512 * block.expansion, num_classes)
+        self.sparseblock = sparsefilter(self.scale_factor)
 
 
         for m in self.modules():
@@ -344,6 +345,7 @@ class ResNet(nn.Module):
     def _forward_impl(self, x: Tensor) -> Tensor:
         # See note [TorchScript super()]
         x = self.conv1(x)
+        x = self.sparseblock(x)
         x = self.bn1(x)
         x = self.relu(x)
         x = self.maxpool(x)

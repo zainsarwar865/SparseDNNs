@@ -10,7 +10,6 @@
 #SBATCH --job-name=eps
 #SBATCH --gres=gpu:a40:1
 
-
 # >>> conda initialize >>>
 # !! Contents within this block are managed by 'conda init' !!
 __conda_setup="$('/opt/conda/bin/conda' 'shell.bash' 'hook' 2> /dev/null)"
@@ -30,4 +29,4 @@ unset __conda_setup
 conda activate "/home/zsarwar/.conda/envs/cnn"
 
 
-./sharded.sh
+./randCNN.sh

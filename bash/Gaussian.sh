@@ -1,6 +1,6 @@
 CREATE_ROOT=false
 TRAIN_MT_BASELINE=false
-RUN_ATTACK=true
+RUN_ATTACK=false
 TEST=true
 
 
@@ -15,8 +15,8 @@ home_dir=/home/zsarwar/Projects/SparseDNNs/scripts
 gpu=0
 seed=42
 attack="CW"
-#epsilon_list=(0.002 0.004 0.006 0.008 0.01 0.012 0.014 0.016 0.018 0.02 0.022 0.024 0.026 0.028 0.03 0.032 0.034 0.036 0.038 0.04)
-epsilon_list=(0.02)
+epsilon_list=(0.002 0.004 0.006 0.008 0.01 0.012 0.014 0.016 0.018 0.02 0.022 0.024 0.026 0.028 0.03 0.032 0.034 0.036 0.038 0.04 0.042 0.044 0.046 0.048 0.05 0.052 0.054 0.056 0.058 0.060 0.062 0.064 0.066 0.068)
+#epsilon_list=(0.05 0.052 0.054 0.056 0.058 0.060)
 c_base=1.0
 d_base=0.0
 
@@ -138,7 +138,7 @@ RUN_ATTACK_TEST=true
 
 # Attack parameters
 original_dataset=cifar10
-steps=200
+steps=2000
 lr=0.01
 batch_size=512
 total_attack_samples_test=2560
@@ -173,7 +173,6 @@ then
             --seed=$seed \
             --attack=$attack \
             --attack_split=$attack_split \
-            --detector_type=$detector_type \
             --total_attack_samples=$total_attack_samples_test \
             --num_classes=$num_classes \
             --integrated=$integrated \
@@ -217,7 +216,6 @@ then
             --new_classifier=$new_classifier \
             --test_type=$test_type \
             --attack_split=$attack_split \
-            --detector_type=$detector_type \
             --total_attack_samples=$total_attack_samples_test \
             --integrated=$integrated \
             --attack=$attack \

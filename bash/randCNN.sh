@@ -1,7 +1,7 @@
 CREATE_ROOT=false
-TRAIN_MT_BASELINE=false
+TRAIN_MT_BASELINE=true
 RUN_ATTACK=false
-TEST=true
+TEST=false
 
 
 #echo $y
@@ -25,14 +25,14 @@ weight_repulsion="False"
 sparseblock='None'
 gaussian_dev=0.0
 
-model='resnet18_sharded'
+model='resnet18_randCNN'
 
 #############################################################################
 if [ "$model" = 'resnet18_randCNN' ] || [ "$model" = 'resnet18_sharded' ]
 then    
-    scale_factor=4
+    scale_factor=2
     weight_repulsion="True"
-    sparseblock='ShardedKernels' # 'SparsifyKernelGroups'
+    sparseblock='SparsifyKernelGroups' # 'SparsifyKernelGroups'
 fi
 
 if [ "$model" = 'MLP-12' ] || [ "$model" = 'MLP-6' ] || [ "$model" = 'MLP-3' ]
@@ -90,7 +90,7 @@ cd ${home_dir}
 batch_size=512
 lr=0.1
 model_ema=False
-epochs=2505
+epochs=2500
 resume=True
 pretrained=False
 seed=42

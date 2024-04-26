@@ -613,6 +613,7 @@ def train(train_loader, model, criterion, optimizer, epoch, device, args):
         output = model(images)
         loss = criterion(output, target)
         """
+        # l2 distance maximization
         if args.weight_repulsion:
             tot_repulsion_loss = 0
             for idx, (name, param) in enumerate(model.named_modules(), 1):
@@ -639,6 +640,26 @@ def train(train_loader, model, criterion, optimizer, epoch, device, args):
             loss+=tot_repulsion_loss
         #logger.critical(f"Final loss : {loss}")
         """
+        # Correlation minimization
+        if args.weight_repulsion:
+            tot_repulsion_loss = 0
+            for idx, (name, param) in enumerate(model.named_modules(), 1):
+                if "conv" in name:
+                    kernel_vectors = param.weight.flatten(1)
+                    corr_coeff = torch.corrcoef(kernel_vectors).triu(1).unsqueeze(0)
+                    corr_blocks = torch.nn.functional.unfold(corr_coeff, kernel_size=args.scale_factor, stride=args.scale_factor, padding=0).T
+                    corr_blocks = torch.abs(corr_blocks)
+                    step_size = (corr_coeff.shape[1] // (args.scale_factor)) + 1
+                    extract_indices = torch.arange(0, corr_blocks.shape[0], step=step_size)
+                    repulsion_loss = corr_blocks[extract_indices].sum()
+                    tot_repulsion_loss+=(repulsion_loss) # Og 8    
+            tot_repulsion_loss_c = -tot_repulsion_loss.clone().detach()
+            lam = 1
+            while tot_repulsion_loss_c > (loss*3): # og 3
+                tot_repulsion_loss_c = tot_repulsion_loss_c / 2
+                lam*=1/2
+            tot_repulsion_loss = lam * tot_repulsion_loss
+            loss+=tot_repulsion_loss
         #measure accuracy and record loss
         acc1, acc5 = utils.accuracy(output, target, topk=(1, 2))
         #f1_score = compute_f1_score(output, target)

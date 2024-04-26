@@ -4,11 +4,11 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=2GB
-#SBATCH --time=03:55:00
+#SBATCH --time=00:55:00
 #SBATCH --output=/home/zsarwar/slurm/out/p%j.%N.stdout
 #SBATCH --error=/home/zsarwar/slurm/out/p%j_e.%N.stderr
 #SBATCH --job-name=eps
-#SBATCH --gres=gpu:a40:1
+#SBATCH --gres=gpu:a30:1
 
 
 # >>> conda initialize >>>
@@ -30,4 +30,4 @@ unset __conda_setup
 conda activate "/home/zsarwar/.conda/envs/cnn"
 
 
-./sharded.sh
+hostname
