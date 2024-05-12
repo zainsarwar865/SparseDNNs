@@ -27,13 +27,15 @@ parser.add_argument('--original_dataset', type=str)
 parser.add_argument('--trainer_type', type=str)
 parser.add_argument('--gpu', type=str)
 parser.add_argument('--attack_split', type=str)
-parser.add_argument('--detector_type', type=str)
+parser.add_argument('--detector_type', type=str, default='Regular')
 parser.add_argument('--total_attack_samples', type=int)
 parser.add_argument('--total_train_samples', type=int)
 parser.add_argument('--integrated', type=str)
 parser.add_argument('--print_freq', default=10, type=int)
 parser.add_argument('--scale_factor', type=int),
 parser.add_argument('--sparsefilter', type=str),
+parser.add_argument('--gaussian_dev', type=float, default=None),
+parser.add_argument('--attack_type', type=str), 
 parser.add_argument('--seed', type=int, help="seed for pandas sampling")
 
 args = parser.parse_args()
@@ -148,6 +150,9 @@ elif args.sparsefilter == 'ShardedKernels':
 elif args.model == "resnet18_Gaussian":
     from utils.resnet_gaussian import resnet18
     from torchattacks.attacks.cw_rand_bounded import CW
+elif args.model == 'resnet18_Gaussian_Weights':
+    from utils.resnet_gaussian_weights import resnet18, NoisyResNet18
+    from torchattacks.attacks.cw_rand_bounded import CW
 elif args.sparsefilter == "None":
     from utils.resnet import resnet18
     from torchattacks.attacks.cw_bounded import CW    
@@ -229,15 +234,24 @@ ckpt_path = os.path.join(expr_dir, ckpt_config)
 print("ckpt_path", ckpt_path)
 
 
-if args.model in ['resnet18_randCNN', 'resnet18_sharded']:
+if args.model in ['resnet18_randCNN', 'resnet18_sharded', 'resnet18_randCNN_l2']:
         model = resnet18(sparsefilter=sparseblock, scale_factor=args.scale_factor)    
-elif args.model in ['resnet18', 'resnet18_Gaussian']:
+elif args.model in ['resnet18', 'resnet18_Gaussian_Weights']:
     model = resnet18()
+elif args.model in ['resnet18_Gaussian']:
+    model = resnet18(std=args.gaussian_dev)
 elif 'MLP' in args.model:
     model = MLP_EXP(args.scale_factor)
 
 if 'resnet18' in args.model:       
     model.fc = nn.Linear(in_features=512, out_features=args.num_classes, bias=True)
+
+
+if args.model in ['resnet18_Gaussian_Weights']:
+    print("Loading Gaussian perturbed model...")
+    model = NoisyResNet18(model=model)
+
+
 
 checkpoint = torch.load(ckpt_path, map_location=loc)
 model.load_state_dict(checkpoint['state_dict'])
@@ -248,7 +262,7 @@ model = model.to(device)
 # Filter out incorrectly classified samples
 model = model.eval()
 
-if args.model in ['resnet18_randCNN', 'resnet18_Gaussian']:
+if args.model in ['resnet18_randCNN', 'resnet18_Gaussian', 'resnet18_Gaussian_Weights', 'resnet18_randCNN_l2']:
     mask = run_validate_iter(model, dataloader)
 else:
     mask = run_validate(model,dataloader)
@@ -269,25 +283,6 @@ elif args.attack_split == 'test':
 
 print(f"Size of dataset: {len(dataloader.dataset)} ")
 
-"""
-# Load trained MLP
-if args.integrated:        
-    mlp = MLP()
-    best_ckpt_name = "model_best.pth.tar"
-    best_ckpt_path = os.path.join(mlp_ckpt_dir, best_ckpt_name)
-    if args.gpu is None:
-        checkpoint = torch.load(best_ckpt_path, map_location=loc)
-    elif torch.cuda.is_available():
-        # Map model to be loaded to specified single gpu.
-        loc = device
-        # Load best checkpoint
-        checkpoint = torch.load(best_ckpt_path, map_location=loc)
-    best_epoch = checkpoint['epoch']
-    best_acc1 = checkpoint['best_acc1']
-    best_acc1 = torch.tensor(best_acc1)
-    mlp.load_state_dict(checkpoint['state_dict'])
-    mlp = mlp.to(device=device)
-"""
 all_adv_images = None
 all_og_images = None
 all_labels = None
@@ -299,7 +294,7 @@ all_best_moving_avg = None
 if args.attack == "CW":
         atk = CW(model, c=args.c_attack, steps=args.steps, lr=args.lr, eps=args.eps)
 
-if args.model in ['resnet18_randCNN', 'resnet18_Gaussian']:
+if args.model in ['resnet18_randCNN', 'resnet18_Gaussian', 'resnet18_Gaussian_Weights', 'resnet18_randCNN_l2']:
     for bn, (images, labels) in enumerate(dataloader):
         adv_images, og_images, flipped_indices, best_moving_avg  = atk(images, labels)
         if isinstance(all_adv_images, torch.Tensor):
@@ -342,7 +337,7 @@ else:
             all_flipped_indices = flipped_indices
 
 # Save adversarial images
-image_save_config = f"Adversarial_Datasets/{args.attack}_adv_samples_{args.total_attack_samples}_{args.attack_split}_detector-type-{args.detector_type}_integrated-{args.integrated}_c-{args.c_attack}_d-{args.d_attack}_eps-{args.eps}.pickle"
+image_save_config = f"Adversarial_Datasets/{args.attack}_adv_samples_{args.total_attack_samples}_{args.attack_split}_detector-type-{args.detector_type}_integrated-{args.integrated}_c-{args.c_attack}_d-{args.d_attack}_eps-{args.eps}_attack-type-{args.attack_type}.pickle"
 image_save_path  = os.path.join(expr_dir, image_save_config)
 
 adv_dataset = [all_adv_images, all_labels]
@@ -350,20 +345,20 @@ ben_dataset = [all_og_images, all_labels]
 with open(image_save_path, 'wb') as out_dataset:
     pickle.dump(adv_dataset, out_dataset)
 
-image_save_config = f"Benign_Datasets/{args.attack}_benign_samples_{args.total_attack_samples}_{args.attack_split}_detector-type-{args.detector_type}_integrated-{args.integrated}_c-{args.c_attack}_d-{args.d_attack}_eps-{args.eps}.pickle"
+image_save_config = f"Benign_Datasets/{args.attack}_benign_samples_{args.total_attack_samples}_{args.attack_split}_detector-type-{args.detector_type}_integrated-{args.integrated}_c-{args.c_attack}_d-{args.d_attack}_eps-{args.eps}_attack-type-{args.attack_type}.pickle"
 image_save_path  = os.path.join(expr_dir, image_save_config)
 
 with open(image_save_path, 'wb') as out_dataset:
     pickle.dump(ben_dataset, out_dataset)
 
-perturbed_indices_save_config = f"Predictions/Perturbed_Samples/{args.attack}_benign_samples_{args.total_attack_samples}_{args.attack_split}_detector-type-{args.detector_type}_integrated-{args.integrated}_c-{args.c_attack}_d-{args.d_attack}_eps-{args.eps}.pt"
+perturbed_indices_save_config = f"Predictions/Perturbed_Samples/{args.attack}_benign_samples_{args.total_attack_samples}_{args.attack_split}_detector-type-{args.detector_type}_integrated-{args.integrated}_c-{args.c_attack}_d-{args.d_attack}_eps-{args.eps}_attack-type-{args.attack_type}.pt"
 perturbed_indices_save_path  = os.path.join(expr_dir, perturbed_indices_save_config)
 
 torch.save(all_flipped_indices, perturbed_indices_save_path)
 
-if args.model in ['resnet18_randCNN', 'resnet18_Gaussian']:
+if args.model in ['resnet18_randCNN', 'resnet18_Gaussian', 'resnet18_Gaussian_Weights']:
 
-    best_moving_avg_save_config = f"Predictions/Perturbed_Samples/Moving_avg_{args.attack}_benign_samples_{args.total_attack_samples}_{args.attack_split}_detector-type-{args.detector_type}_integrated-{args.integrated}_c-{args.c_attack}_d-{args.d_attack}_eps-{args.eps}.pt"
+    best_moving_avg_save_config = f"Predictions/Perturbed_Samples/Moving_avg_{args.attack}_benign_samples_{args.total_attack_samples}_{args.attack_split}_detector-type-{args.detector_type}_integrated-{args.integrated}_c-{args.c_attack}_d-{args.d_attack}_eps-{args.eps}_attack-type-{args.attack_type}.pt"
     best_moving_avg_save_path  = os.path.join(expr_dir, best_moving_avg_save_config)
 
     torch.save(all_best_moving_avg, best_moving_avg_save_path)

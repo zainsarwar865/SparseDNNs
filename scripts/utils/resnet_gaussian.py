@@ -75,6 +75,7 @@ class BasicBlock(nn.Module):
         base_width: int = 64,
         dilation: int = 1,
         norm_layer: Optional[Callable[..., nn.Module]] = None,
+        std: float = 0.015
     ) -> None:
         super().__init__()
         if norm_layer is None:
@@ -91,14 +92,15 @@ class BasicBlock(nn.Module):
         self.bn2 = norm_layer(planes)
         self.downsample = downsample
         self.stride = stride
+        self.std = std
 
     def forward(self, x: Tensor) -> Tensor:
         identity = x
-        x= x + (0.015*torch.randn_like(x))
+        x= x + (self.std*torch.randn_like(x))
         out = self.conv1(x)
         out = self.bn1(out)
         out = self.relu(out)
-        out= out + (0.015*torch.randn_like(out))
+        out= out + (self.std*torch.randn_like(out))
         out = self.conv2(out)
         out = self.bn2(out)
 
@@ -180,6 +182,7 @@ class ResNet(nn.Module):
         width_per_group: int = 64,
         replace_stride_with_dilation: Optional[List[bool]] = None,
         norm_layer: Optional[Callable[..., nn.Module]] = None,
+        std : float = 0.015,
     ) -> None:
         super().__init__()
         _log_api_usage_once(self)
@@ -198,6 +201,7 @@ class ResNet(nn.Module):
                 "replace_stride_with_dilation should be None "
                 f"or a 3-element tuple, got {replace_stride_with_dilation}"
             )
+        self.std = std
         self.groups = groups
         self.base_width = width_per_group
         self.conv1 = nn.Conv2d(3, self.inplanes, kernel_size=7, stride=2, padding=3, bias=False)
@@ -210,7 +214,7 @@ class ResNet(nn.Module):
         self.layer4 = self._make_layer(block, 512, layers[3], stride=2, dilate=replace_stride_with_dilation[2])
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.fc = nn.Linear(512 * block.expansion, num_classes)
-
+        
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
@@ -227,6 +231,7 @@ class ResNet(nn.Module):
                     nn.init.constant_(m.bn3.weight, 0)  # type: ignore[arg-type]
                 elif isinstance(m, BasicBlock) and m.bn2.weight is not None:
                     nn.init.constant_(m.bn2.weight, 0)  # type: ignore[arg-type]
+        print("Std is blahhh blahhh : ", self.std)
 
     def _make_layer(
         self,
@@ -251,7 +256,7 @@ class ResNet(nn.Module):
         layers = []
         layers.append(
             block(
-                self.inplanes, planes, stride, downsample, self.groups, self.base_width, previous_dilation, norm_layer
+                self.inplanes, planes, stride, downsample, self.groups, self.base_width, previous_dilation, norm_layer, std=self.std
             )
         )
         self.inplanes = planes * block.expansion
@@ -264,6 +269,7 @@ class ResNet(nn.Module):
                     base_width=self.base_width,
                     dilation=self.dilation,
                     norm_layer=norm_layer,
+                    std=self.std
                 )
             )
 
@@ -271,7 +277,7 @@ class ResNet(nn.Module):
 
     def _forward_impl(self, x: Tensor) -> Tensor:
         # See note [TorchScript super()]
-        x= x + (0.015*torch.randn_like(x))
+        x= x + (self.std*torch.randn_like(x))
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)

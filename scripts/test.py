@@ -39,7 +39,7 @@ parser.add_argument('--new_classifier', type=str)
 parser.add_argument('--test_type', type=str)
 parser.add_argument('--attack', type=str)
 parser.add_argument('--attack_split', type=str)
-parser.add_argument('--detector_type', type=str)
+parser.add_argument('--detector_type', type=str, default='Regular')
 parser.add_argument('--integrated', type=str)
 parser.add_argument('--total_attack_samples', type=int)
 parser.add_argument('--c', type=float)
@@ -49,6 +49,8 @@ parser.add_argument('--weight_repulsion', type=str, default=None)
 parser.add_argument('--scale_factor', type=int, default=None),
 parser.add_argument('--sparsefilter', type=str, default=None),
 parser.add_argument('--gaussian_dev', type=float, default=None),
+parser.add_argument('--attack_type', type=str),
+
 
 args = parser.parse_args()
 os.environ['CUDA_VISIBLE_DEVICES']=str(args.gpu)
@@ -125,7 +127,8 @@ elif args.arch == 'resnet18':
     from utils.resnet import resnet18
 elif args.arch == 'resnet18_Gaussian':
     from utils.resnet_gaussian import resnet18
-
+elif args.arch == 'resnet18_Gaussian_Weights':
+    from utils.resnet_gaussian_weights import resnet18, NoisyResNet18
 
 
 # Select sparseblock here
@@ -222,7 +225,7 @@ relu_dir = os.path.join(expr_dir, relu_folder)
 
 # Create log files
 
-logging_path = os.path.join(expr_dir,f"Logs/Resnet_integrated-{args.integrated}-Type-{args.test_type}_Split-{args.attack_split}_Detector-{args.detector_type}_c-{args.c}_eps-{args.eps}.log")
+logging_path = os.path.join(expr_dir,f"Logs/Resnet_integrated-{args.integrated}-Type-{args.test_type}_Split-{args.attack_split}_Detector-{args.detector_type}_c-{args.c}_eps-{args.eps}_attack-type-{args.attack_type}.log")
 
 logging.basicConfig(filename=logging_path,
                     format='%(asctime)s %(message)s',
@@ -238,7 +241,7 @@ logger.setLevel(logging.INFO)
 expr_config_dict = {}
 all_args = args._get_kwargs()
 expr_config_dict = {tup[0]:tup[1] for tup in all_args}
-yaml_file = os.path.join(expr_dir, f"Logs/Resnet_Config_Integrated-{args.integrated}-Type-{args.test_type}_Split-{args.attack_split}_Detector-{args.detector_type}.yaml")
+yaml_file = os.path.join(expr_dir, f"Logs/Resnet_Config_Integrated-{args.integrated}-Type-{args.test_type}_Split-{args.attack_split}_Detector-{args.detector_type}_attack-type-{args.attack_type}.yaml")
 with open(yaml_file, 'w') as yaml_out:
     yaml.dump(expr_config_dict, yaml_out)
 
@@ -277,31 +280,37 @@ def main_worker(gpu, ngpus_per_node, args):
         logger.critical(f"Use GPU: {args.gpu} for training")
 
 
-
     # create model
     if args.pretrained:
         logger.critical(f"=> using pre-trained model {args.arch}")        
-        if args.arch in  ['resnet18_randCNN', 'resnet18_sharded']:
+        if args.arch in  ['resnet18_randCNN', 'resnet18_sharded', 'resnet18_randCNN_l2']:
             model = resnet18(sparsefilter=sparseblock,scale_factor=args.scale_factor)
-        elif args.arch in ['resnet18_randCNN', 'resnet18']:
+        elif args.arch in ['resnet18', 'resnet18_Gaussian_Weights']:
             model = resnet18()
+        elif args.arch in ['resnet18_Gaussian']:
+            model = resnet18(std=args.gaussian_dev)
         if args.new_classifier:
-            if args.arch in ['resnet18_randCNN', 'resnet18_Gaussian', 'resnet18']:  
+            if args.arch in ['resnet18', 'resnet18_Gaussian_Weights', 'resnet18_randCNN', 'resnet18_sharded', 'resnet18_randCNN_l2']:  
                model.fc = nn.Linear(in_features=512, out_features=args.num_classes, bias=True)
         if 'MLP' in args.arch:
             model = MLP_EXP(args.scale_factor)
     else:
         logger.critical(f"=> creating model {args.arch}")
-        if args.arch in  ['resnet18_randCNN', 'resnet18_sharded']:
+        if args.arch in  ['resnet18_randCNN', 'resnet18_sharded', 'resnet18_randCNN_l2']:
             model = resnet18(sparsefilter=sparseblock, scale_factor=args.scale_factor)
-        elif args.arch in ['resnet18_Gaussian', 'resnet18']:
+        elif args.arch in ['resnet18', 'resnet18_Gaussian_Weights']:
             model = resnet18()
+        elif args.arch in ['resnet18_Gaussian']:
+            model = resnet18(std=args.gaussian_dev)
         if args.new_classifier:
-            if args.arch in ['resnet18_randCNN', 'resnet18_Gaussian', 'resnet18', 'resnet18_sharded']:
+            if args.arch in ['resnet18', 'resnet18_Gaussian', 'resnet18_Gaussian_Weights', 'resnet18_randCNN', 'resnet18_sharded', 'resnet18_randCNN_l2']:
                 model.fc = nn.Linear(in_features=512, out_features=args.num_classes, bias=True)
         if 'MLP' in args.arch:
             model = MLP_EXP(args.scale_factor)
 
+    if args.arch in ['resnet18_Gaussian_Weights']:
+        print("Loading Gaussian perturbed model...")
+        model = NoisyResNet18(model=model, std=args.gaussian_dev)
 
         
     # Test after training
@@ -383,13 +392,13 @@ def main_worker(gpu, ngpus_per_node, args):
     transform_adv = transforms.Compose([
     ])
 
-    flipped_indices_config = f"Predictions/Perturbed_Samples/{args.attack}_benign_samples_{args.total_attack_samples}_{args.attack_split}_detector-type-{args.detector_type}_integrated-{args.integrated}_c-{args.c}_d-{args.d}_eps-{args.eps}.pt"
+    flipped_indices_config = f"Predictions/Perturbed_Samples/{args.attack}_benign_samples_{args.total_attack_samples}_{args.attack_split}_detector-type-{args.detector_type}_integrated-{args.integrated}_c-{args.c}_d-{args.d}_eps-{args.eps}_attack-type-{args.attack_type}.pt"
     flipped_indices_path = os.path.join(expr_dir, flipped_indices_config)
     flipped_indices = torch.load(flipped_indices_path)
 
     dataset_path = configs.dataset_root_paths[args.original_dataset]
     if args.test_type == 'adversarial':
-        adv_dataset_config = f"Adversarial_Datasets/{args.attack}_adv_samples_{args.total_attack_samples}_{args.attack_split}_detector-type-{args.detector_type}_integrated-{args.integrated}_c-{args.c}_d-{args.d}_eps-{args.eps}.pickle" 
+        adv_dataset_config = f"Adversarial_Datasets/{args.attack}_adv_samples_{args.total_attack_samples}_{args.attack_split}_detector-type-{args.detector_type}_integrated-{args.integrated}_c-{args.c}_d-{args.d}_eps-{args.eps}_attack-type-{args.attack_type}.pickle" 
         adv_dataset_path = os.path.join(expr_dir, adv_dataset_config)
         with open(adv_dataset_path, 'rb') as adv_set:
             adv_samples = pickle.load(adv_set)
@@ -432,7 +441,7 @@ def main_worker(gpu, ngpus_per_node, args):
     predictions['true_labels'] = true_labels
     predictions['pred_labels'] = pred_labels
     
-    preds_config = f"Predictions/Model/{args.attack}_type-{args.test_type}_{args.total_attack_samples}_{args.attack_split}_detector-type-{args.detector_type}_integrated-{args.integrated}_c-{args.c}_d-{args.d}_eps-{args.eps}.pickle"
+    preds_config = f"Predictions/Model/{args.attack}_type-{args.test_type}_{args.total_attack_samples}_{args.attack_split}_detector-type-{args.detector_type}_integrated-{args.integrated}_c-{args.c}_d-{args.d}_eps-{args.eps}_attack-type-{args.attack_type}.pickle"
     preds_path = os.path.join(expr_dir, preds_config)
     with open(preds_path, 'wb') as o_file:
         pickle.dump(predictions, o_file)

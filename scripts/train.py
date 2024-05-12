@@ -71,7 +71,7 @@ import torchvision.datasets as datasets
 import torchvision
 import torchvision.models as models
 import torchvision.transforms as transforms
-from torch.optim.lr_scheduler import StepLR, CosineAnnealingLR, LinearLR, SequentialLR
+from torch.optim.lr_scheduler import StepLR, CosineAnnealingLR, CosineAnnealingWarmRestarts, LinearLR, SequentialLR
 from torch.utils.data import Subset
 from utils.dataset import CustomImageDataset, CustomImageDataset_Adv
 import hashlib
@@ -89,12 +89,15 @@ import sys
 from utils.MLP import MLP_EXP
 
 
-if args.arch in  ['resnet18_randCNN', 'resnet18_sharded']:
+if args.arch in  ['resnet18_randCNN', 'resnet18_sharded', 'resnet18_randCNN_l2']:
     from utils.resnet_rand import resnet18
 elif args.arch == 'resnet18':
     from utils.resnet import resnet18
 elif args.arch == 'resnet18_Gaussian':
     from utils.resnet_gaussian import resnet18
+elif args.arch == 'resnet18_Gaussian_Weights':
+    from utils.resnet_gaussian_weights import resnet18, NoisyResNet18
+
 
 def timeout_handler(signum, frame):
     print("Script completed after x seconds.")
@@ -308,30 +311,35 @@ def main_worker(gpu, ngpus_per_node, args):
     global best_acc1
     args.gpu = gpu
 
+
+
+
     if args.gpu is not None:
         logger.critical(f"Use GPU: {args.gpu} for training")
-
-
     # create model
     if args.pretrained:
         logger.critical(f"=> using pre-trained model {args.arch}")        
-        if args.arch in  ['resnet18_randCNN', 'resnet18_sharded']:
+        if args.arch in  ['resnet18_randCNN', 'resnet18_sharded', 'resnet18_randCNN_l2']:
             model = resnet18(sparsefilter=sparseblock,scale_factor=args.scale_factor)
-        elif args.arch in ['resnet18_randCNN', 'resnet18']:
+        elif args.arch in ['resnet18', 'resnet18_Gaussian_Weights']:
             model = resnet18()
+        elif args.arch in ['resnet18_Gaussian']:
+            model = resnet18(std=args.gaussian_dev)
         if args.new_classifier:
-            if args.arch in ['resnet18_randCNN', 'resnet18_Gaussian', 'resnet18']:  
+            if args.arch in ['resnet18', 'resnet18_Gaussian_Weights', 'resnet18_randCNN', 'resnet18_sharded', 'resnet18_randCNN_l2']:  
                model.fc = nn.Linear(in_features=512, out_features=args.num_classes, bias=True)
         if 'MLP' in args.arch:
             model = MLP_EXP(args.scale_factor)
     else:
         logger.critical(f"=> creating model {args.arch}")
-        if args.arch in  ['resnet18_randCNN', 'resnet18_sharded']:
+        if args.arch in  ['resnet18_randCNN', 'resnet18_sharded', 'resnet18_randCNN_l2']:
             model = resnet18(sparsefilter=sparseblock, scale_factor=args.scale_factor)
-        elif args.arch in ['resnet18_Gaussian', 'resnet18']:
+        elif args.arch in ['resnet18', 'resnet18_Gaussian_Weights']:
             model = resnet18()
+        elif args.arch in ['resnet18_Gaussian']:
+            model = resnet18(std=args.gaussian_dev)
         if args.new_classifier:
-            if args.arch in ['resnet18_randCNN', 'resnet18_Gaussian', 'resnet18', 'resnet18_sharded']:
+            if args.arch in ['resnet18', 'resnet18_Gaussian', 'resnet18_Gaussian_Weights', 'resnet18_randCNN', 'resnet18_sharded', 'resnet18_randCNN_l2']:
                 model.fc = nn.Linear(in_features=512, out_features=args.num_classes, bias=True)
         if 'MLP' in args.arch:
             model = MLP_EXP(args.scale_factor)
@@ -340,9 +348,17 @@ def main_worker(gpu, ngpus_per_node, args):
     if args.freeze_layers:
         for param in model.parameters():
             param.requires_grad = False
-        if args.arch in ['resnet18_randCNN', 'resnet18_Gaussian', 'resnet18', 'resnet18_sharded']:  
+        if args.arch in ['resnet18', 'resnet18_Gaussian', 'resnet18_Gaussian_Weights', 'resnet18_randCNN', 'resnet18_sharded', 'resnet18_randCNN_l2']:  
             model.fc.weight.requires_grad = True
             model.fc.bias.requires_grad = True
+
+
+    if args.arch in ['resnet18_Gaussian_Weights']:
+        print("Loading Gaussian perturbed model...")
+        model = NoisyResNet18(model=model, std=args.gaussian_dev)
+
+
+
 
     if not torch.cuda.is_available() and not torch.backends.mps.is_available():
         logger.critical('using CPU, this will be slow')
@@ -397,9 +413,8 @@ def main_worker(gpu, ngpus_per_node, args):
                                 weight_decay=args.weight_decay)
     
 
-    scheduler = CosineAnnealingLR(
-            optimizer, T_max=args.epochs, eta_min=args.lr_min
-        )
+    scheduler = CosineAnnealingWarmRestarts(
+            optimizer, T_0=2000)
     """
     warmup_lr_scheduler = LinearLR(
                 optimizer, start_factor=args.lr_warmup_decay, total_iters=args.lr_warmup_epochs
@@ -529,6 +544,7 @@ def main_worker(gpu, ngpus_per_node, args):
                                             shuffle=False, num_workers=args.workers)
     
     for epoch in range(args.start_epoch, args.epochs):
+        
         # train for one epoch
         train(train_loader, model, criterion, optimizer, epoch, device, args)
         if(((epoch + 1) % args.num_eval_epochs) == 0):
@@ -581,10 +597,56 @@ def main_worker(gpu, ngpus_per_node, args):
     scheduler.load_state_dict(checkpoint['scheduler'])
     logger.critical(f"=> loaded checkpoint '{best_ckpt_path}' (epoch {best_epoch})")
 
+
+
+    
+
+
+    logger.critical("Computing accuracy on a single run...")
     validate(val_loader, model, criterion, args)
-
-
+    logger.critical("Computing stable accuracy...")
+    mask = run_validate_iter(model, val_loader)
+    stable_acc = torch.sum(mask) / mask.shape[1]
+    logger.critical(f"Stable acc : {stable_acc}")
+    print(f"Stable acc : {stable_acc}")
     ###################################################################################################
+
+
+def run_validate_iter(model, loader, iters=100):
+    all_masks = None
+    for i in range(iters):
+        t_mask = run_validate(model, loader)
+        if isinstance(all_masks, torch.Tensor):
+            all_masks = torch.logical_and(all_masks, t_mask)
+        else:
+            all_masks = t_mask
+    return all_masks
+
+
+def run_validate(model, loader, base_progress=0):
+    all_masks = None
+    with torch.no_grad():
+        end = time.time()
+        for i, (images, target) in enumerate(loader):
+            i = base_progress + i
+            if args.gpu is not None and torch.cuda.is_available():
+                images = images.cuda(args.gpu, non_blocking=True)
+            if torch.cuda.is_available():
+                target = target.cuda(args.gpu, non_blocking=True)
+            # compute output
+            #output, relu_feats = model(images)
+            output = model(images)
+            # measure accuracy and record loss
+            _, pred = output.topk(1, largest=True)
+            pred = pred.t()
+            correct = pred.eq(target[None])
+            if isinstance(all_masks, torch.Tensor):
+                all_masks = torch.cat((all_masks, correct), dim=1)
+            else:
+                all_masks = correct
+    return all_masks
+
+
 
 def train(train_loader, model, criterion, optimizer, epoch, device, args):
     batch_time = AverageMeter('Time', ':6.3f')
@@ -612,54 +674,47 @@ def train(train_loader, model, criterion, optimizer, epoch, device, args):
         # compute output
         output = model(images)
         loss = criterion(output, target)
-        """
-        # l2 distance maximization
         if args.weight_repulsion:
-            tot_repulsion_loss = 0
-            for idx, (name, param) in enumerate(model.named_modules(), 1):
-                if "conv" in name and "layer" in name:
-                    kernel_vectors = param.weight.flatten(1)
-                    l2_distances = torch.cdist(kernel_vectors, kernel_vectors).triu().unsqueeze(0)
-                    l2_blocks = torch.nn.functional.unfold(l2_distances, kernel_size=args.scale_factor, stride=args.scale_factor, padding=0).T
-                    step_size = (l2_distances.shape[1] // (args.scale_factor)) + 1
-                    extract_indices = torch.arange(0, l2_blocks.shape[0], step=step_size)
-                    repulsion_loss = -l2_blocks[extract_indices].sum()
-                    tot_repulsion_loss+=(repulsion_loss  * 3) # Og 8    
+            if args.arch in ['resnet18_randCNN_l2']:
+                tot_repulsion_loss = 0
+                for idx, (name, param) in enumerate(model.named_modules(), 1):
+                    if "conv" in name and "layer" in name:
+                        kernel_vectors = param.weight.flatten(1)
+                        l2_distances = torch.cdist(kernel_vectors, kernel_vectors).triu().unsqueeze(0)
+                        l2_blocks = torch.nn.functional.unfold(l2_distances, kernel_size=args.scale_factor, stride=args.scale_factor, padding=0).T
+                        step_size = (l2_distances.shape[1] // (args.scale_factor)) + 1
+                        extract_indices = torch.arange(0, l2_blocks.shape[0], step=step_size)
+                        repulsion_loss = -l2_blocks[extract_indices].sum()
+                        tot_repulsion_loss+=(repulsion_loss  * 3) # Og 8    
+            
+                tot_repulsion_loss_c = -tot_repulsion_loss.clone().detach()
+                lam = 1
+                while tot_repulsion_loss_c > (loss*3): # og 3
+                    tot_repulsion_loss_c = tot_repulsion_loss_c / 2
+                    lam*=1/2
+                tot_repulsion_loss = lam * tot_repulsion_loss
+                loss+=tot_repulsion_loss
+            else:
+                # Correlation minimization
+                tot_repulsion_loss = 0
+                for idx, (name, param) in enumerate(model.named_modules(), 1):
+                    if "conv" in name:
+                        kernel_vectors = param.weight.flatten(1)
+                        corr_coeff = torch.corrcoef(kernel_vectors).triu(1).unsqueeze(0)
+                        corr_blocks = torch.nn.functional.unfold(corr_coeff, kernel_size=args.scale_factor, stride=args.scale_factor, padding=0).T
+                        corr_blocks = torch.abs(corr_blocks)
+                        step_size = (corr_coeff.shape[1] // (args.scale_factor)) + 1
+                        extract_indices = torch.arange(0, corr_blocks.shape[0], step=step_size)
+                        repulsion_loss = corr_blocks[extract_indices].sum()
+                        tot_repulsion_loss+=(repulsion_loss) # Og 8    
+                tot_repulsion_loss_c = tot_repulsion_loss.clone().detach()
+                lam = 1
+                while tot_repulsion_loss_c > (loss): # og 3
+                    tot_repulsion_loss_c = tot_repulsion_loss_c / 2
+                    lam*=1/2
+                tot_repulsion_loss = lam * tot_repulsion_loss
+                loss+=tot_repulsion_loss
         
-            # This cannot be a fixed hyperparameter
-            tot_repulsion_loss_c = -tot_repulsion_loss.clone().detach()
-            #print("Original tot_repulsion_loss_c", tot_repulsion_loss_c)
-            lam = 1
-            while tot_repulsion_loss_c > (loss*3): # og 3
-                tot_repulsion_loss_c = tot_repulsion_loss_c / 2
-                lam*=1/2
-
-            tot_repulsion_loss = lam * tot_repulsion_loss
-            #print(f"Loss:{loss}, tot_repulsion_loss: {tot_repulsion_loss}")
-            #logger.critical(f"Loss:{loss}, tot_repulsion_loss: {tot_repulsion_loss}")
-            loss+=tot_repulsion_loss
-        #logger.critical(f"Final loss : {loss}")
-        """
-        # Correlation minimization
-        if args.weight_repulsion:
-            tot_repulsion_loss = 0
-            for idx, (name, param) in enumerate(model.named_modules(), 1):
-                if "conv" in name:
-                    kernel_vectors = param.weight.flatten(1)
-                    corr_coeff = torch.corrcoef(kernel_vectors).triu(1).unsqueeze(0)
-                    corr_blocks = torch.nn.functional.unfold(corr_coeff, kernel_size=args.scale_factor, stride=args.scale_factor, padding=0).T
-                    corr_blocks = torch.abs(corr_blocks)
-                    step_size = (corr_coeff.shape[1] // (args.scale_factor)) + 1
-                    extract_indices = torch.arange(0, corr_blocks.shape[0], step=step_size)
-                    repulsion_loss = corr_blocks[extract_indices].sum()
-                    tot_repulsion_loss+=(repulsion_loss) # Og 8    
-            tot_repulsion_loss_c = -tot_repulsion_loss.clone().detach()
-            lam = 1
-            while tot_repulsion_loss_c > (loss*3): # og 3
-                tot_repulsion_loss_c = tot_repulsion_loss_c / 2
-                lam*=1/2
-            tot_repulsion_loss = lam * tot_repulsion_loss
-            loss+=tot_repulsion_loss
         #measure accuracy and record loss
         acc1, acc5 = utils.accuracy(output, target, topk=(1, 2))
         #f1_score = compute_f1_score(output, target)
