@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from ..attack import Attack
+from ..attack_rand import Attack
 
 class CW(Attack):
     r"""
@@ -74,73 +74,94 @@ class CW(Attack):
 
         # For tracking moving average of successes/failures
         batch_size = images.shape[0]
-        condition = torch.randn((batch_size,)) > 0
-        mask = condition
-        binary_success = condition.to(dtype=int)
-        cache_size =  10
+        cache_size =  100
         success_thres = 0.5
+        success_thresh_mask = torch.zeros(size=(batch_size,), dtype=torch.bool).to(device=self.device)
 
         moving_results = torch.zeros(size=(batch_size, cache_size)).to(device=self.device)
         moving_results[:] = torch.nan
         moving_avg = torch.zeros(size=(batch_size,)).to(device=self.device)
         best_moving_avg = torch.negative(torch.ones(size=(batch_size,))).to(device=self.device)
 
-        for step in range(self.steps):
-            # Get adversarial images
-            print("On step : ", step)
-            adv_images = self.tanh_space(w)
-            # Calculate loss
-            current_L2 = MSELoss(Flatten(adv_images), Flatten(images)).sum(dim=1)
-            L2_loss = current_L2.sum()
-            outputs, _ = self.get_logits(adv_images)
-            if self.targeted:
-                f_loss = self.f(outputs, target_labels).sum()
-            else:
-                f_loss = self.f(outputs, labels).sum()
-            cost = L2_loss + self.c * f_loss
-            print("L2_loss: ",  L2_loss.item())
-            print("f_loss: ",  f_loss.item())
-            print("--------------------")
-            print("cost: ",  cost.item())
-            print("--------------------")
 
-            optimizer.zero_grad()
-            cost.backward()
-            optimizer.step()
 
-            # Update adversarial images
-            pre = torch.argmax(outputs.detach(), 1)
-            if self.targeted:
-                # We want to let pre == target_labels in a targeted attack
-                condition = (pre == target_labels).float()
-            else:
-                # If the attack is not targeted we simply make these two values unequal
-                condition = (pre != labels).float()
-                #print(torch.sum(condition), condition.shape)
-            # Filter out images that get either correct predictions or non-decreasing loss,
-            # i.e., only images that are both misclassified and loss-decreasing are left
-            
-            #mask = condition * (best_L2 > current_L2.detach())
-            mask = condition
-            flipped_mask = torch.logical_or(mask, flipped_mask)
-            best_L2 = mask * current_L2.detach() + (1 - mask) * best_L2
-            
-            # Update running average values
-            binary_success = mask
-            cache_idx = step % cache_size
-            moving_results[:, cache_idx] = binary_success
-            moving_avg = torch.nanmean(moving_results, dim=1)
-            mask_mov_avg = moving_avg > best_moving_avg
-            mask = torch.logical_and(mask_mov_avg, mask).float()
-            mask = mask.view([-1] + [1] * (dim - 1))
-            best_adv_images = mask * adv_images.detach() + (1 - mask) * best_adv_images
+        c_temp = self.c - 0.2
+
+        for i in range(2):
+            c_temp+=0.2
+            print("C is : ", c_temp)
+            for step in range(self.steps):
+                # Get adversarial images
+                #print("On step : ", step)
+                adv_images = self.tanh_space(w)
+                # Calculate loss
+                current_L2 = MSELoss(Flatten(adv_images), Flatten(images)).sum(dim=1)
+                L2_loss = current_L2.sum()
+                outputs = self.get_logits(adv_images)
+                if self.targeted:
+                    f_loss = self.f(outputs, target_labels).sum()
+                else:
+                    f_loss = self.f(outputs, labels).sum()
+                cost = L2_loss + c_temp * f_loss
+                #print("L2_loss: ",  L2_loss.item())
+                #print("f_loss: ",  f_loss.item())
+                #print("--------------------")
+                #print("cost: ",  cost.item())
+                #print("--------------------")
+
+                optimizer.zero_grad()
+                cost.backward()
+                optimizer.step()
+
+                # Update adversarial images
+                pre = torch.argmax(outputs.detach(), 1)
+                if self.targeted:
+                    # We want to let pre == target_labels in a targeted attack
+                    condition = (pre == target_labels).float()
+                else:
+                    # If the attack is not targeted we simply make these two values unequal
+                    condition = (pre != labels).float()
+                    #print(torch.sum(condition), condition.shape)
+                # Filter out images that get either correct predictions or non-decreasing loss,
+                # i.e., only images that are both misclassified and loss-decreasing are left
+                
+                #mask = condition * (best_L2 > current_L2.detach())
+                mask = condition
+                #flipped_mask = torch.logical_or(mask, flipped_mask)
+                best_L2 = mask * current_L2.detach() + (1 - mask) * best_L2
+                # Update running average values
+                binary_success = mask
+                cache_idx = step % cache_size
+                moving_results[:, cache_idx] = binary_success
+                moving_avg = torch.nanmean(moving_results, dim=1)
+                mask_mov_avg = moving_avg > best_moving_avg
+
+                mask = torch.logical_and(mask_mov_avg, mask)
+                best_moving_avg[mask] = moving_avg[mask]
+                
+                old_mask = torch.logical_or(~mask, success_thresh_mask)
+                
+                old_mask = old_mask.float()
+                old_mask = old_mask.view([-1] + [1] * (dim - 1))
+                mask_1d = mask
+                mask = mask.float()
+                
+                mask = mask.view([-1] + [1] * (dim - 1))
+                unsucc_mask = (~success_thresh_mask).float()
+                unsucc_mask = unsucc_mask.view([-1] + [1] * (dim - 1))
+                best_adv_images = unsucc_mask * mask * adv_images.detach() + old_mask * best_adv_images
+                #best_adv_images = mask * adv_images.detach() +  (1 - mask) * best_adv_images
+                curr_success_mask = moving_avg > success_thres
+                curr_success_mask = torch.logical_and(curr_success_mask, mask_1d)
+                success_thresh_mask[curr_success_mask] = True
 
 
         # Only return successful adversarial samples
-        flipped_indices = torch.where(flipped_mask == True)[0]
+        flipped_indices = torch.where(success_thresh_mask == True)[0]
         flipped_indices = flipped_indices.detach().cpu()
         best_adv_images = best_adv_images.detach().cpu()
-        return best_adv_images, images.cpu(), flipped_indices
+        best_moving_avg = best_moving_avg.detach().cpu()
+        return best_adv_images, images.cpu(), flipped_indices, best_moving_avg
 
     def tanh_space(self, x):
         return 1 / 2 * (torch.tanh(x) + 1)

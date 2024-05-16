@@ -41,7 +41,7 @@ class CW(Attack):
         self.steps = steps
         self.lr = lr
         self.supported_mode = ["default", "targeted"]
-        self.eps = eps
+        self.eps = torch.tensor(eps)
         #self.set_mode_targeted_random()
 
     def forward(self, images, labels):
@@ -58,8 +58,30 @@ class CW(Attack):
             target_labels = self.get_target_label(images, labels)
 
         # w = torch.zeros_like(images).detach() # Requires 2x times
-        w = self.inverse_tanh_space(images).detach()
-        w.requires_grad = True
+        #w = self.inverse_tanh_space(images).detach()
+        #w.requires_grad = True
+
+        lb = torch.tensor(0).to(self.device)
+        ub = torch.tensor(1).to(self.device)
+        S = torch.zeros_like(images)
+        S.requires_grad = True
+        A = torch.max(images - self.eps, lb).to(self.device)
+        B = torch.min(images + self.eps, ub).to(self.device)
+        K = torch.divide(B - images, images - A).to(self.device)
+
+
+        # Handle 0s
+        K = torch.flatten(K)
+        zero_idxs = torch.where(K == 0)[0]
+        K[zero_idxs] = torch.tensor(1/50).to(self.device)
+        und_idxs = torch.where(torch.isinf(K) == True)
+        K[und_idxs] = torch.tensor(50.0).to(self.device)
+
+        # Reshape K
+        K = K.reshape(images.shape)
+
+
+
 
         best_adv_images = images.clone().detach()
         best_L2 = 1e10 * torch.ones((len(images))).to(self.device)
@@ -70,7 +92,7 @@ class CW(Attack):
         
         Flatten = nn.Flatten()
 
-        optimizer = optim.Adam([w], lr=self.lr)
+        optimizer = optim.Adam([S], lr=self.lr)
 
         flipped_mask = torch.zeros(images.shape[0], dtype=torch.bool).to(self.device)
 
@@ -87,10 +109,13 @@ class CW(Attack):
 
         for step in range(self.steps):
             # Get adversarial images
-            print("On step : ", step)
-            t_adv_images = self.tanh_space(w)
-            adv_images = (self.eps*(t_adv_images - images)) + images
-
+            #print("On step : ", step)
+            #t_adv_images = self.tanh_space(w)
+            #adv_images = (self.eps*(t_adv_images - images)) + images
+            #t_adv_images = self.tanh_space(w) - images
+            #adv_images = torch.minimum(torch.maximum(-self.eps, t_adv_images), self.eps) + images
+            adv_images = self.S_space(S=S, A=A, B=B, K=K )
+            
             # Calculate loss
             current_L2 = MSELoss(Flatten(adv_images), Flatten(images)).sum(dim=1)
             L2_loss = current_L2.sum()
@@ -100,11 +125,11 @@ class CW(Attack):
             else:
                 f_loss = self.f(outputs, labels).sum()
             cost = f_loss
-            print("L2_loss: ",  L2_loss.item())
-            print("f_loss: ",  f_loss.item())
-            print("--------------------")
-            print("cost: ",  cost.item())
-            print("--------------------")
+            #print("L2_loss: ",  L2_loss.item())
+            #print("f_loss: ",  f_loss.item())
+            #print("--------------------")
+            #print("cost: ",  cost.item())
+            #print("--------------------")
 
             optimizer.zero_grad()
             cost.backward()
@@ -132,17 +157,26 @@ class CW(Attack):
             moving_results[:, cache_idx] = binary_success
             moving_avg = torch.nanmean(moving_results, dim=1)
             mask_mov_avg = moving_avg > best_moving_avg
-            curr_success_mask = moving_avg > success_thres
-            curr_success_mask = torch.logical_and(curr_success_mask, mask)
-            success_thresh_mask[curr_success_mask] = True
+
             mask = torch.logical_and(mask_mov_avg, mask)
             best_moving_avg[mask] = moving_avg[mask]
+            
+            old_mask = torch.logical_or(~mask, success_thresh_mask)
+            
+            old_mask = old_mask.float()
+            old_mask = old_mask.view([-1] + [1] * (dim - 1))
+            mask_1d = mask
             mask = mask.float()
+            
             mask = mask.view([-1] + [1] * (dim - 1))
             unsucc_mask = (~success_thresh_mask).float()
             unsucc_mask = unsucc_mask.view([-1] + [1] * (dim - 1))
-            best_adv_images = unsucc_mask * mask * adv_images.detach() + (1 - mask) * best_adv_images
-            #best_adv_images = mask * adv_images.detach() + (1 - mask) * best_adv_images
+            best_adv_images = unsucc_mask * mask * adv_images.detach() + old_mask * best_adv_images
+            #best_adv_images = mask * adv_images.detach() +  (1 - mask) * best_adv_images
+            curr_success_mask = moving_avg > success_thres
+            curr_success_mask = torch.logical_and(curr_success_mask, mask_1d)
+            success_thresh_mask[curr_success_mask] = True
+
 
         # Only return successful adversarial samples
         flipped_indices = torch.where(success_thresh_mask == True)[0]
@@ -173,4 +207,8 @@ class CW(Attack):
         if self.targeted:
             return torch.clamp((other - real), min=-self.kappa)
         else:
-            return torch.clamp((real - other), min=-self.kappa) 
+            return torch.clamp((real - other), min=-self.kappa)
+        
+    def S_space(self, S, A, B, K):
+        return A + torch.divide(B - A, (1 + K*(torch.exp(-S))))
+

@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from ..attack import Attack
+from ..attack_rand import Attack
 
 class CW(Attack):
     r"""
@@ -49,7 +49,7 @@ class CW(Attack):
         Overridden.
         """
         print("C value is : ", self.c)
-        print(f"eps is : {self.eps}")
+        print(f"Eps is {self.eps}")
         images = images.clone().detach().to(self.device)
         #print("Inside forward", images[0])
         labels = labels.clone().detach().to(self.device)
@@ -58,27 +58,8 @@ class CW(Attack):
             target_labels = self.get_target_label(images, labels)
 
         # w = torch.zeros_like(images).detach() # Requires 2x times
-        #w = self.inverse_tanh_space(images).detach()
-        #w.requires_grad = True
-
-        lb = torch.tensor(0).to(self.device)
-        ub = torch.tensor(1).to(self.device)
-        S = torch.zeros_like(images)
-        S.requires_grad = True
-        A = torch.max(images - self.eps, lb).to(self.device)
-        B = torch.min(images + self.eps, ub).to(self.device)
-        K = torch.divide(B - images, images - A).to(self.device)
-
-        # Handle 0s
-        K = torch.flatten(K)
-        zero_idxs = torch.where(K == 0)[0]
-        K[zero_idxs] = torch.tensor(1/50).to(self.device)
-        und_idxs = torch.where(torch.isinf(K) == True)
-        K[und_idxs] = torch.tensor(50.0).to(self.device)
-
-        # Reshape K
-        K = K.reshape(images.shape)
-
+        w = self.inverse_tanh_space(images).detach()
+        w.requires_grad = True
 
         best_adv_images = images.clone().detach()
         best_L2 = 1e10 * torch.ones((len(images))).to(self.device)
@@ -89,17 +70,28 @@ class CW(Attack):
         
         Flatten = nn.Flatten()
 
-        optimizer = optim.Adam([S], lr=self.lr)
+        optimizer = optim.Adam([w], lr=self.lr)
 
         flipped_mask = torch.zeros(images.shape[0], dtype=torch.bool).to(self.device)
 
+        # For tracking moving average of successes/failures
+        batch_size = images.shape[0]
+        cache_size =  100
+        success_thres = 0.5
+        success_thresh_mask = torch.zeros(size=(batch_size,), dtype=torch.bool).to(device=self.device)
+
+        moving_results = torch.zeros(size=(batch_size, cache_size)).to(device=self.device)
+        moving_results[:] = torch.nan
+        moving_avg = torch.zeros(size=(batch_size,)).to(device=self.device)
+        best_moving_avg = torch.negative(torch.ones(size=(batch_size,))).to(device=self.device)
+
         for step in range(self.steps):
             # Get adversarial images
-            #print("On step : ", step)
-            #S = self.tanh_space(w) - images
-            #adv_images = torch.minimum(torch.maximum(-self.eps, S), self.eps) + images
+            print("On step : ", step)
+            #t_adv_images = self.tanh_space(w)
             #adv_images = (self.eps*(t_adv_images - images)) + images
-            adv_images = self.S_space(S=S, A=A, B=B, K=K )
+            t_adv_images = self.tanh_space(w) - images
+            adv_images = torch.minimum(torch.maximum(-self.eps, t_adv_images), self.eps) + images
             # Calculate loss
             current_L2 = MSELoss(Flatten(adv_images), Flatten(images)).sum(dim=1)
             L2_loss = current_L2.sum()
@@ -108,9 +100,13 @@ class CW(Attack):
                 f_loss = self.f(outputs, target_labels).sum()
             else:
                 f_loss = self.f(outputs, labels).sum()
-            #cost = L2_loss + self.c * f_loss
-            cost = self.c * f_loss
- 
+            cost = f_loss
+            print("L2_loss: ",  L2_loss.item())
+            print("f_loss: ",  f_loss.item())
+            print("--------------------")
+            print("cost: ",  cost.item())
+            print("--------------------")
+
             optimizer.zero_grad()
             cost.backward()
             optimizer.step()
@@ -127,33 +123,43 @@ class CW(Attack):
             # Filter out images that get either correct predictions or non-decreasing loss,
             # i.e., only images that are both misclassified and loss-decreasing are left
             
-            mask = condition * (best_L2 > current_L2.detach())
-            #mask = condition
-            flipped_mask = torch.logical_or(mask, flipped_mask)
+            #mask = condition * (best_L2 > current_L2.detach())
+            mask = condition
+            #flipped_mask = torch.logical_or(mask, flipped_mask)
             best_L2 = mask * current_L2.detach() + (1 - mask) * best_L2
+            # Update running average values
+            binary_success = mask
+            cache_idx = step % cache_size
+            moving_results[:, cache_idx] = binary_success
+            moving_avg = torch.nanmean(moving_results, dim=1)
+            mask_mov_avg = moving_avg > best_moving_avg
+
+            mask = torch.logical_and(mask_mov_avg, mask)
+            best_moving_avg[mask] = moving_avg[mask]
+            
+            old_mask = torch.logical_or(~mask, success_thresh_mask)
+            
+            old_mask = old_mask.float()
+            old_mask = old_mask.view([-1] + [1] * (dim - 1))
+            mask_1d = mask
+            mask = mask.float()
             
             mask = mask.view([-1] + [1] * (dim - 1))
-            best_adv_images = mask * adv_images.detach() + (1 - mask) * best_adv_images
+            unsucc_mask = (~success_thresh_mask).float()
+            unsucc_mask = unsucc_mask.view([-1] + [1] * (dim - 1))
+            best_adv_images = unsucc_mask * mask * adv_images.detach() + old_mask * best_adv_images
+            #best_adv_images = mask * adv_images.detach() +  (1 - mask) * best_adv_images
+            curr_success_mask = moving_avg > success_thres
+            curr_success_mask = torch.logical_and(curr_success_mask, mask_1d)
+            success_thresh_mask[curr_success_mask] = True
 
-            # Early stop when loss does not converge.
-            # max(.,1) To prevent MODULO BY ZERO error in the next step.
-            """
-            if step % max(self.steps // 10, 1) == 0:
-                if cost.item() > prev_cost:
-                    best_adv_images = best_adv_images.chromdetach().cpu()
-                    return best_adv_images, images.cpu()
-                prev_cost = cost.item()
-            """
 
-        #adv_images = adv_images.detach().cpu()
         # Only return successful adversarial samples
-        flipped_indices = torch.where(flipped_mask == True)[0]
-        #best_adv_images = best_adv_images[flipped_indices]
-        #images = images[flipped_indices]
-        #sub_labels = labels.detach()[flipped_indices].cpu()
+        flipped_indices = torch.where(success_thresh_mask == True)[0]
         flipped_indices = flipped_indices.detach().cpu()
         best_adv_images = best_adv_images.detach().cpu()
-        return best_adv_images, images.cpu(), flipped_indices
+        best_moving_avg = best_moving_avg.detach().cpu()
+        return best_adv_images, images.cpu(), flipped_indices, best_moving_avg
 
     def tanh_space(self, x):
         return 1 / 2 * (torch.tanh(x) + 1)
@@ -177,8 +183,4 @@ class CW(Attack):
         if self.targeted:
             return torch.clamp((other - real), min=-self.kappa)
         else:
-            return torch.clamp((real - other), min=-self.kappa)
-
-    def S_space(self, S, A, B, K):
-        return A + torch.divide(B - A, (1 + K*(torch.exp(-S))))
-    
+            return torch.clamp((real - other), min=-self.kappa) 

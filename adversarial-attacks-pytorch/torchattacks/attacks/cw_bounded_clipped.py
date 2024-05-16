@@ -58,27 +58,8 @@ class CW(Attack):
             target_labels = self.get_target_label(images, labels)
 
         # w = torch.zeros_like(images).detach() # Requires 2x times
-        #w = self.inverse_tanh_space(images).detach()
-        #w.requires_grad = True
-
-        lb = torch.tensor(0).to(self.device)
-        ub = torch.tensor(1).to(self.device)
-        S = torch.zeros_like(images)
-        S.requires_grad = True
-        A = torch.max(images - self.eps, lb).to(self.device)
-        B = torch.min(images + self.eps, ub).to(self.device)
-        K = torch.divide(B - images, images - A).to(self.device)
-
-        # Handle 0s
-        K = torch.flatten(K)
-        zero_idxs = torch.where(K == 0)[0]
-        K[zero_idxs] = torch.tensor(1/50).to(self.device)
-        und_idxs = torch.where(torch.isinf(K) == True)
-        K[und_idxs] = torch.tensor(50.0).to(self.device)
-
-        # Reshape K
-        K = K.reshape(images.shape)
-
+        w = self.inverse_tanh_space(images).detach()
+        w.requires_grad = True
 
         best_adv_images = images.clone().detach()
         best_L2 = 1e10 * torch.ones((len(images))).to(self.device)
@@ -89,17 +70,21 @@ class CW(Attack):
         
         Flatten = nn.Flatten()
 
-        optimizer = optim.Adam([S], lr=self.lr)
+        optimizer = optim.Adam([w], lr=self.lr)
 
         flipped_mask = torch.zeros(images.shape[0], dtype=torch.bool).to(self.device)
 
         for step in range(self.steps):
             # Get adversarial images
-            #print("On step : ", step)
-            #S = self.tanh_space(w) - images
-            #adv_images = torch.minimum(torch.maximum(-self.eps, S), self.eps) + images
+            print("On step : ", step)
+            S = self.tanh_space(w) - images
+            #print("Min s", S.min())
+            #print("Max s", S.max())
+            #t_adv_images = self.tanh_space(w)
+
+            adv_images = torch.minimum(torch.maximum(-self.eps, S), self.eps) + images
             #adv_images = (self.eps*(t_adv_images - images)) + images
-            adv_images = self.S_space(S=S, A=A, B=B, K=K )
+
             # Calculate loss
             current_L2 = MSELoss(Flatten(adv_images), Flatten(images)).sum(dim=1)
             L2_loss = current_L2.sum()
@@ -110,7 +95,12 @@ class CW(Attack):
                 f_loss = self.f(outputs, labels).sum()
             #cost = L2_loss + self.c * f_loss
             cost = self.c * f_loss
- 
+            print("L2_loss: ",  L2_loss.item())
+            print("f_loss: ",  f_loss.item())
+            print("--------------------")
+            print("cost: ",  cost.item())
+            print("--------------------")
+
             optimizer.zero_grad()
             cost.backward()
             optimizer.step()
@@ -153,6 +143,7 @@ class CW(Attack):
         #sub_labels = labels.detach()[flipped_indices].cpu()
         flipped_indices = flipped_indices.detach().cpu()
         best_adv_images = best_adv_images.detach().cpu()
+        print("You say goodbye....")
         return best_adv_images, images.cpu(), flipped_indices
 
     def tanh_space(self, x):
@@ -178,7 +169,3 @@ class CW(Attack):
             return torch.clamp((other - real), min=-self.kappa)
         else:
             return torch.clamp((real - other), min=-self.kappa)
-
-    def S_space(self, S, A, B, K):
-        return A + torch.divide(B - A, (1 + K*(torch.exp(-S))))
-    

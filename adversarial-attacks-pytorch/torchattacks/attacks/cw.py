@@ -48,6 +48,7 @@ class CW(Attack):
         Overridden.
         """
         print("C value is : ", self.c)
+        #print("H")
         images = images.clone().detach().to(self.device)
         #print("Inside forward", images[0])
         labels = labels.clone().detach().to(self.device)
@@ -71,58 +72,67 @@ class CW(Attack):
         optimizer = optim.Adam([w], lr=self.lr)
 
         flipped_mask = torch.zeros(images.shape[0], dtype=torch.bool).to(self.device)
+        c_temp = self.c - 0.2
 
-        for step in range(self.steps):
-            # Get adversarial images
-            print("On step : ", step)
-            adv_images = self.tanh_space(w)
-            # Calculate loss
-            current_L2 = MSELoss(Flatten(adv_images), Flatten(images)).sum(dim=1)
-            L2_loss = current_L2.sum()
-            outputs, _ = self.get_logits(adv_images)
-            if self.targeted:
-                f_loss = self.f(outputs, target_labels).sum()
-            else:
-                f_loss = self.f(outputs, labels).sum()
-            cost = L2_loss + self.c * f_loss
-            print("L2_loss: ",  L2_loss.item())
-            print("f_loss: ",  f_loss.item())
-            print("--------------------")
-            print("cost: ",  cost.item())
-            print("--------------------")
+        # Check if any flipped mask is still not true
+        for i in range(2):
+            c_temp+=0.2
+            print("C value is : ", c_temp)
+            if torch.all(flipped_mask):
+                break
+            for step in range(self.steps):
+                # Get adversarial images
+                #print("On step : ", step)
+                adv_images = self.tanh_space(w)
+                # Calculate loss
+                current_L2 = MSELoss(Flatten(adv_images), Flatten(images)).sum(dim=1)
+                L2_loss = current_L2.sum()
+                outputs = self.get_logits(adv_images)
+                if self.targeted:
+                    f_loss = self.f(outputs, target_labels).sum()
+                else:
+                    f_loss = self.f(outputs, labels).sum()
+                cost = L2_loss + self.c * f_loss
+                #print("L2_loss: ",  L2_loss.item())
+                #print("f_loss: ",  f_loss.item())
+                #print("--------------------")
+                #print("cost: ",  cost.item())
+                #print("--------------------")
 
-            optimizer.zero_grad()
-            cost.backward()
-            optimizer.step()
+                optimizer.zero_grad()
+                cost.backward()
+                optimizer.step()
 
-            # Update adversarial images
-            pre = torch.argmax(outputs.detach(), 1)
-            if self.targeted:
-                # We want to let pre == target_labels in a targeted attack
-                condition = (pre == target_labels).float()
-            else:
-                # If the attack is not targeted we simply make these two values unequal
-                condition = (pre != labels).float()
-                #print(torch.sum(condition), condition.shape)
-            # Filter out images that get either correct predictions or non-decreasing loss,
-            # i.e., only images that are both misclassified and loss-decreasing are left
-            
-            mask = condition * (best_L2 > current_L2.detach())
-            flipped_mask = torch.logical_or(mask, flipped_mask)
-            best_L2 = mask * current_L2.detach() + (1 - mask) * best_L2
-            
-            mask = mask.view([-1] + [1] * (dim - 1))
-            best_adv_images = mask * adv_images.detach() + (1 - mask) * best_adv_images
+                # Update adversarial images
+                pre = torch.argmax(outputs.detach(), 1)
+                if self.targeted:
+                    # We want to let pre == target_labels in a targeted attack
+                    condition = (pre == target_labels).float()
+                else:
+                    # If the attack is not targeted we simply make these two values unequal
+                    condition = (pre != labels).float()
+                    #print(torch.sum(condition), condition.shape)
+                # Filter out images that get either correct predictions or non-decreasing loss,
+                # i.e., only images that are both misclassified and loss-decreasing are left
+                
+                mask = condition * (best_L2 > current_L2.detach())
+                flipped_mask = torch.logical_or(mask, flipped_mask)
+                best_L2 = mask * current_L2.detach() + (1 - mask) * best_L2
+                
+                mask = mask.view([-1] + [1] * (dim - 1))
+                best_adv_images = mask * adv_images.detach() + (1 - mask) * best_adv_images
 
-            # Early stop when loss does not converge.
-            # max(.,1) To prevent MODULO BY ZERO error in the next step.
-            """
-            if step % max(self.steps // 10, 1) == 0:
-                if cost.item() > prev_cost:
-                    best_adv_images = best_adv_images.chromdetach().cpu()
-                    return best_adv_images, images.cpu()
-                prev_cost = cost.item()
-            """
+                # Early stop when loss does not converge.
+                # max(.,1) To prevent MODULO BY ZERO error in the next step.
+                """
+                if step % max(self.steps // 10, 1) == 0:
+                    if cost.item() > prev_cost:
+                        best_adv_images = best_adv_images.chromdetach().cpu()
+                        return best_adv_images, images.cpu()
+                    prev_cost = cost.item()
+                """
+
+
 
         #adv_images = adv_images.detach().cpu()
         # Only return successful adversarial samples
