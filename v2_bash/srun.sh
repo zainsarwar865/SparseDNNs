@@ -1,0 +1,10 @@
+srun \
+--partition=next-gen \
+--nodes=1 \
+--ntasks=1 \
+--cpus-per-task=1 \
+--mem=2GB \
+--time=00:50:00 \
+--job-name=interactive \
+--gres=gpu:h100:1 \
+--pty bash
